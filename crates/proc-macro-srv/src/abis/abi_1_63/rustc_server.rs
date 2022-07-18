@@ -310,9 +310,12 @@ impl server::TokenStream for Rustc {
     ) -> Self::TokenStream {
         match tree {
             bridge::TokenTree::Group(group) => {
-                // let tree = TokenTree::from(group);
-                // Self::TokenStream::from_iter(vec![tree])
-                group.stream.unwrap_or_default()
+                let subtree = tt::Subtree {
+                    delimiter: delim_to_internal(group.delimiter),
+                    token_trees: group.stream.unwrap_or_default().token_trees,
+                };
+                let tree = TokenTree::from(subtree);
+                Self::TokenStream::from_iter(vec![tree])
             }
 
             bridge::TokenTree::Ident(IdentId(index)) => {
@@ -395,16 +398,8 @@ impl server::TokenStream for Rustc {
                     })
                 }
                 tt::TokenTree::Subtree(subtree) => bridge::TokenTree::Group(bridge::Group {
-                    delimiter: match &subtree.delimiter {
-                        Some(delim) => match &delim.kind {
-                            mbe::DelimiterKind::Parenthesis => bridge::Delimiter::Parenthesis,
-                            mbe::DelimiterKind::Brace => bridge::Delimiter::Brace,
-                            mbe::DelimiterKind::Bracket => bridge::Delimiter::Bracket,
-                        },
-                        None => bridge::Delimiter::None,
-                    },
+                    delimiter: delim_to_external(subtree.delimiter),
                     stream: Some(TokenStream { token_trees: subtree.token_trees }),
-                    // TODO: handle spans
                     span: bridge::DelimSpan {
                         open: Span::unspecified(),
                         close: Span::unspecified(),

@@ -34,7 +34,7 @@ pub mod bridge;
 
 mod diagnostic;
 
-pub(crate) use diagnostic::{Diagnostic, Level, MultiSpan};
+pub(crate) use diagnostic::{Diagnostic, Level};
 
 use std::cmp::Ordering;
 use std::ops::RangeBounds;
@@ -179,8 +179,6 @@ impl Default for TokenStream {
         TokenStream::new()
     }
 }
-
-pub(crate) use quote::{quote, quote_span};
 
 fn tree_to_bridge_tree(
     tree: TokenTree,
