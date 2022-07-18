@@ -30,6 +30,7 @@ mod abi_1_56;
 mod abi_1_57;
 mod abi_1_58;
 mod abi_1_63;
+mod abi_internal;
 
 use super::dylib::LoadProcMacroDylibError;
 pub(crate) use abi_1_48::Abi as Abi_1_48;
@@ -38,6 +39,7 @@ pub(crate) use abi_1_56::Abi as Abi_1_56;
 pub(crate) use abi_1_57::Abi as Abi_1_57;
 pub(crate) use abi_1_58::Abi as Abi_1_58;
 pub(crate) use abi_1_63::Abi as Abi_1_63;
+pub(crate) use abi_internal::Abi as Abi_Internal;
 use libloading::Library;
 use proc_macro_api::{ProcMacroKind, RustCInfo};
 
