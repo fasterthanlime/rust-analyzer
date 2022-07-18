@@ -638,16 +638,6 @@ impl server::Span for Rustc {
     fn debug(&mut self, span: Self::Span) -> String {
         format!("{:?}", span.0)
     }
-    fn def_site(&mut self) -> Self::Span {
-        // MySpan(self.span_interner.intern(&MySpanData(Span::def_site())))
-        // FIXME handle span
-        tt::TokenId::unspecified()
-    }
-    fn call_site(&mut self) -> Self::Span {
-        // MySpan(self.span_interner.intern(&MySpanData(Span::call_site())))
-        // FIXME handle span
-        tt::TokenId::unspecified()
-    }
     fn source_file(&mut self, _span: Self::Span) -> Self::SourceFile {
         SourceFile {}
     }
@@ -688,11 +678,6 @@ impl server::Span for Rustc {
         Some(first)
     }
     fn resolved_at(&mut self, _span: Self::Span, _at: Self::Span) -> Self::Span {
-        // FIXME handle span
-        tt::TokenId::unspecified()
-    }
-
-    fn mixed_site(&mut self) -> Self::Span {
         // FIXME handle span
         tt::TokenId::unspecified()
     }
