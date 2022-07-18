@@ -679,6 +679,16 @@ impl server::MultiSpan for Rustc {
     }
 }
 
+impl server::Server for Rustc {
+    fn globals(&mut self) -> bridge::ExpnGlobals<Self::Span> {
+        bridge::ExpnGlobals {
+            def_site: tt::TokenId::unspecified(),
+            call_site: tt::TokenId::unspecified(),
+            mixed_site: tt::TokenId::unspecified(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::proc_macro::bridge::server::Literal;
