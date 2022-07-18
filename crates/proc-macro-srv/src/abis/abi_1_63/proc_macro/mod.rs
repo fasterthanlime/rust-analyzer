@@ -9,6 +9,26 @@
 //!
 //! [the book]: ../book/ch19-06-macros.html#procedural-macros-for-generating-code-from-attributes
 
+// #![deny(missing_docs)]
+// #![doc(
+//     html_playground_url = "https://play.rust-lang.org/",
+//     issue_tracker_base_url = "https://github.com/rust-lang/rust/issues/",
+//     test(no_crate_inject, attr(deny(warnings))),
+//     test(attr(allow(dead_code, deprecated, unused_variables, unused_mut)))
+// )]
+// This library is copied into rust-analyzer to allow loading rustc compiled proc macros.
+// Please avoid unstable features where possible to minimize the amount of changes necessary
+// to make it compile with rust-analyzer on stable.
+// #![feature(rustc_allow_const_fn_unstable)]
+// #![feature(staged_api)]
+// #![feature(allow_internal_unstable)]
+// #![feature(decl_macro)]
+// #![feature(negative_impls)]
+// #![feature(restricted_std)]
+// #![feature(rustc_attrs)]
+// #![feature(min_specialization)]
+// #![recursion_limit = "256"]
+
 #[doc(hidden)]
 pub mod bridge;
 
@@ -20,7 +40,7 @@ use std::cmp::Ordering;
 use std::ops::RangeBounds;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::{error, fmt, iter, mem};
+use std::{error, fmt, iter};
 
 /// Determines whether proc_macro has been made accessible to the currently
 /// running program.
@@ -36,7 +56,7 @@ use std::{error, fmt, iter, mem};
 /// API of proc_macro is presently available. Returns true if invoked from
 /// inside of a procedural macro, false if invoked from any other binary.
 pub fn is_available() -> bool {
-    bridge::Bridge::is_available()
+    bridge::client::is_available()
 }
 
 /// The main type provided by this crate, representing an abstract stream of
@@ -48,6 +68,9 @@ pub fn is_available() -> bool {
 /// and `#[proc_macro_derive]` definitions.
 #[derive(Clone)]
 pub struct TokenStream(Option<bridge::client::TokenStream>);
+
+// impl !Send for TokenStream {}
+// impl !Sync for TokenStream {}
 
 /// Error returned from `TokenStream::from_str`.
 #[non_exhaustive]
@@ -62,6 +85,9 @@ impl fmt::Display for LexError {
 
 impl error::Error for LexError {}
 
+// impl !Send for LexError {}
+// impl !Sync for LexError {}
+
 /// Error returned from `TokenStream::expand_expr`.
 #[non_exhaustive]
 #[derive(Debug)]
@@ -74,6 +100,9 @@ impl fmt::Display for ExpandError {
 }
 
 impl error::Error for ExpandError {}
+
+// impl !Send for ExpandError {}
+// impl !Sync for ExpandError {}
 
 impl TokenStream {
     /// Returns an empty `TokenStream` containing no token trees.
@@ -120,12 +149,20 @@ impl FromStr for TokenStream {
     }
 }
 
+// N.B., the bridge only provides `to_string`, implement `fmt::Display`
+// based on it (the reverse of the usual relationship between the two).
+impl TokenStream {
+    fn adhoc_to_string(&self) -> String {
+        self.0.as_ref().map(|t| t.to_string()).unwrap_or_default()
+    }
+}
+
 /// Prints the token stream as a string that is supposed to be losslessly convertible back
 /// into the same token stream (modulo spans), except for possibly `TokenTree::Group`s
 /// with `Delimiter::None` delimiters and negative numeric literals.
 impl fmt::Display for TokenStream {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.to_string())
+        f.write_str(&self.adhoc_to_string())
     }
 }
 
@@ -148,8 +185,8 @@ pub use quote::{quote, quote_span};
 fn tree_to_bridge_tree(
     tree: TokenTree,
 ) -> bridge::TokenTree<
-    bridge::client::Group,
-    bridge::client::Punct,
+    bridge::client::TokenStream,
+    bridge::client::Span,
     bridge::client::Ident,
     bridge::client::Literal,
 > {
@@ -165,6 +202,44 @@ fn tree_to_bridge_tree(
 impl From<TokenTree> for TokenStream {
     fn from(tree: TokenTree) -> TokenStream {
         TokenStream(Some(bridge::client::TokenStream::from_token_tree(tree_to_bridge_tree(tree))))
+    }
+}
+
+/// Non-generic helper for implementing `FromIterator<TokenTree>` and
+/// `Extend<TokenTree>` with less monomorphization in calling crates.
+struct ConcatTreesHelper {
+    trees: Vec<
+        bridge::TokenTree<
+            bridge::client::TokenStream,
+            bridge::client::Span,
+            bridge::client::Ident,
+            bridge::client::Literal,
+        >,
+    >,
+}
+
+impl ConcatTreesHelper {
+    fn new(capacity: usize) -> Self {
+        ConcatTreesHelper { trees: Vec::with_capacity(capacity) }
+    }
+
+    fn push(&mut self, tree: TokenTree) {
+        self.trees.push(tree_to_bridge_tree(tree));
+    }
+
+    fn build(self) -> TokenStream {
+        if self.trees.is_empty() {
+            TokenStream(None)
+        } else {
+            TokenStream(Some(bridge::client::TokenStream::concat_trees(None, self.trees)))
+        }
+    }
+
+    fn append_to(self, stream: &mut TokenStream) {
+        if self.trees.is_empty() {
+            return;
+        }
+        stream.0 = Some(bridge::client::TokenStream::concat_trees(stream.0.take(), self.trees))
     }
 }
 
@@ -209,7 +284,10 @@ impl ConcatStreamsHelper {
 /// Collects a number of token trees into a single stream.
 impl iter::FromIterator<TokenTree> for TokenStream {
     fn from_iter<I: IntoIterator<Item = TokenTree>>(trees: I) -> Self {
-        trees.into_iter().map(TokenStream::from).collect()
+        let iter = trees.into_iter();
+        let mut builder = ConcatTreesHelper::new(iter.size_hint().0);
+        iter.for_each(|tree| builder.push(tree));
+        builder.build()
     }
 }
 
@@ -226,14 +304,19 @@ impl iter::FromIterator<TokenStream> for TokenStream {
 
 impl Extend<TokenTree> for TokenStream {
     fn extend<I: IntoIterator<Item = TokenTree>>(&mut self, trees: I) {
-        self.extend(trees.into_iter().map(TokenStream::from));
+        let iter = trees.into_iter();
+        let mut builder = ConcatTreesHelper::new(iter.size_hint().0);
+        iter.for_each(|tree| builder.push(tree));
+        builder.append_to(self);
     }
 }
 
 impl Extend<TokenStream> for TokenStream {
     fn extend<I: IntoIterator<Item = TokenStream>>(&mut self, streams: I) {
-        // FIXME(eddyb) Use an optimized implementation if/when possible.
-        *self = iter::once(mem::replace(self, Self::new())).chain(streams).collect();
+        let iter = streams.into_iter();
+        let mut builder = ConcatStreamsHelper::new(iter.size_hint().0);
+        iter.for_each(|stream| builder.push(stream));
+        builder.append_to(self);
     }
 }
 
@@ -248,8 +331,8 @@ pub mod token_stream {
     pub struct IntoIter(
         std::vec::IntoIter<
             bridge::TokenTree<
-                bridge::client::Group,
-                bridge::client::Punct,
+                bridge::client::TokenStream,
+                bridge::client::Span,
                 bridge::client::Ident,
                 bridge::client::Literal,
             >,
@@ -279,12 +362,26 @@ pub mod token_stream {
     }
 }
 
+/// `quote!(..)` accepts arbitrary tokens and expands into a `TokenStream` describing the input.
+/// For example, `quote!(a + b)` will produce an expression, that, when evaluated, constructs
+/// the `TokenStream` `[Ident("a"), Punct('+', Alone), Ident("b")]`.
+///
+/// Unquoting is done with `$`, and works by taking the single next ident as the unquoted term.
+/// To quote `$` itself, use `$$`.
+// #[rustc_builtin_macro]
+// pub macro quote($($t:tt)*) {
+//     /* compiler built-in */
+// }
+
 #[doc(hidden)]
 mod quote;
 
 /// A region of source code, along with macro expansion information.
 #[derive(Copy, Clone)]
 pub struct Span(bridge::client::Span);
+
+// impl !Send for Span {}
+// impl !Sync for Span {}
 
 macro_rules! diagnostic_method {
     ($name:ident, $level:expr) => {
@@ -432,6 +529,9 @@ impl LineColumn {
     }
 }
 
+// impl !Send for LineColumn {}
+// impl !Sync for LineColumn {}
+
 impl Ord for LineColumn {
     fn cmp(&self, other: &Self) -> Ordering {
         self.line.cmp(&other.line).then(self.column.cmp(&other.column))
@@ -503,6 +603,9 @@ pub enum TokenTree {
     Literal(Literal),
 }
 
+// impl !Send for TokenTree {}
+// impl !Sync for TokenTree {}
+
 impl TokenTree {
     /// Returns the span of this tree, delegating to the `span` method of
     /// the contained token or a delimited stream.
@@ -568,12 +671,25 @@ impl From<Literal> for TokenTree {
     }
 }
 
+// N.B., the bridge only provides `to_string`, implement `fmt::Display`
+// based on it (the reverse of the usual relationship between the two).
+impl TokenTree {
+    fn adhoc_to_string(&self) -> String {
+        match *self {
+            TokenTree::Group(ref t) => t.to_string(),
+            TokenTree::Ident(ref t) => t.to_string(),
+            TokenTree::Punct(ref t) => t.to_string(),
+            TokenTree::Literal(ref t) => t.to_string(),
+        }
+    }
+}
+
 /// Prints the token tree as a string that is supposed to be losslessly convertible back
 /// into the same token tree (modulo spans), except for possibly `TokenTree::Group`s
 /// with `Delimiter::None` delimiters and negative numeric literals.
 impl fmt::Display for TokenTree {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.to_string())
+        f.write_str(&self.adhoc_to_string())
     }
 }
 
@@ -581,7 +697,10 @@ impl fmt::Display for TokenTree {
 ///
 /// A `Group` internally contains a `TokenStream` which is surrounded by `Delimiter`s.
 #[derive(Clone)]
-pub struct Group(bridge::client::Group);
+pub struct Group(bridge::Group<bridge::client::TokenStream, bridge::client::Span>);
+
+// impl !Send for Group {}
+// impl !Sync for Group {}
 
 /// Describes how a sequence of token trees is delimited.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -607,12 +726,16 @@ impl Group {
     /// `Span::call_site()`. To change the span you can use the `set_span`
     /// method below.
     pub fn new(delimiter: Delimiter, stream: TokenStream) -> Group {
-        Group(bridge::client::Group::new(delimiter, stream.0))
+        Group(bridge::Group {
+            delimiter,
+            stream: stream.0,
+            span: bridge::DelimSpan::from_single(Span::call_site().0),
+        })
     }
 
     /// Returns the delimiter of this `Group`
     pub fn delimiter(&self) -> Delimiter {
-        self.0.delimiter()
+        self.0.delimiter
     }
 
     /// Returns the `TokenStream` of tokens that are delimited in this `Group`.
@@ -620,7 +743,7 @@ impl Group {
     /// Note that the returned token stream does not include the delimiter
     /// returned above.
     pub fn stream(&self) -> TokenStream {
-        TokenStream(Some(self.0.stream()))
+        TokenStream(self.0.stream.clone())
     }
 
     /// Returns the span for the delimiters of this token stream, spanning the
@@ -631,7 +754,7 @@ impl Group {
     ///            ^^^^^^^
     /// ```
     pub fn span(&self) -> Span {
-        Span(self.0.span())
+        Span(self.0.span.entire)
     }
 
     /// Returns the span pointing to the opening delimiter of this group.
@@ -641,7 +764,7 @@ impl Group {
     ///                 ^
     /// ```
     pub fn span_open(&self) -> Span {
-        Span(self.0.span_open())
+        Span(self.0.span.open)
     }
 
     /// Returns the span pointing to the closing delimiter of this group.
@@ -651,7 +774,7 @@ impl Group {
     ///                        ^
     /// ```
     pub fn span_close(&self) -> Span {
-        Span(self.0.span_close())
+        Span(self.0.span.close)
     }
 
     /// Configures the span for this `Group`'s delimiters, but not its internal
@@ -661,7 +784,15 @@ impl Group {
     /// by this group, but rather it will only set the span of the delimiter
     /// tokens at the level of the `Group`.
     pub fn set_span(&mut self, span: Span) {
-        self.0.set_span(span.0);
+        self.0.span = bridge::DelimSpan::from_single(span.0);
+    }
+}
+
+// N.B., the bridge only provides `to_string`, implement `fmt::Display`
+// based on it (the reverse of the usual relationship between the two).
+impl Group {
+    fn adhoc_to_string(&self) -> String {
+        TokenStream::from(TokenTree::from(self.clone())).to_string()
     }
 }
 
@@ -670,7 +801,7 @@ impl Group {
 /// with `Delimiter::None` delimiters.
 impl fmt::Display for Group {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.to_string())
+        f.write_str(&self.adhoc_to_string())
     }
 }
 
@@ -689,7 +820,10 @@ impl fmt::Debug for Group {
 /// Multi-character operators like `+=` are represented as two instances of `Punct` with different
 /// forms of `Spacing` returned.
 #[derive(Clone)]
-pub struct Punct(bridge::client::Punct);
+pub struct Punct(bridge::Punct<bridge::client::Span>);
+
+// impl !Send for Punct {}
+// impl !Sync for Punct {}
 
 /// Describes whether a `Punct` is followed immediately by another `Punct` ([`Spacing::Joint`]) or
 /// by a different token or whitespace ([`Spacing::Alone`]).
@@ -713,12 +847,23 @@ impl Punct {
     /// The returned `Punct` will have the default span of `Span::call_site()`
     /// which can be further configured with the `set_span` method below.
     pub fn new(ch: char, spacing: Spacing) -> Punct {
-        Punct(bridge::client::Punct::new(ch, spacing))
+        const LEGAL_CHARS: &[char] = &[
+            '=', '<', '>', '!', '~', '+', '-', '*', '/', '%', '^', '&', '|', '@', '.', ',', ';',
+            ':', '#', '$', '?', '\'',
+        ];
+        if !LEGAL_CHARS.contains(&ch) {
+            panic!("unsupported character `{:?}`", ch);
+        }
+        Punct(bridge::Punct {
+            ch: ch as u8,
+            joint: spacing == Spacing::Joint,
+            span: Span::call_site().0,
+        })
     }
 
     /// Returns the value of this punctuation character as `char`.
     pub fn as_char(&self) -> char {
-        self.0.as_char()
+        self.0.ch as char
     }
 
     /// Returns the spacing of this punctuation character, indicating whether it's immediately
@@ -726,17 +871,21 @@ impl Punct {
     /// a multi-character operator (`Joint`), or it's followed by some other token or whitespace
     /// (`Alone`) so the operator has certainly ended.
     pub fn spacing(&self) -> Spacing {
-        self.0.spacing()
+        if self.0.joint {
+            Spacing::Joint
+        } else {
+            Spacing::Alone
+        }
     }
 
     /// Returns the span for this punctuation character.
     pub fn span(&self) -> Span {
-        Span(self.0.span())
+        Span(self.0.span)
     }
 
     /// Configure the span for this punctuation character.
     pub fn set_span(&mut self, span: Span) {
-        self.0 = self.0.with_span(span.0);
+        self.0.span = span.0;
     }
 }
 
@@ -744,7 +893,7 @@ impl Punct {
 /// back into the same character.
 impl fmt::Display for Punct {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.to_string())
+        write!(f, "{}", self.as_char())
     }
 }
 
@@ -818,11 +967,19 @@ impl Ident {
     }
 }
 
+// N.B., the bridge only provides `to_string`, implement `fmt::Display`
+// based on it (the reverse of the usual relationship between the two).
+impl Ident {
+    fn adhoc_to_string(&self) -> String {
+        TokenStream::from(TokenTree::from(self.clone())).to_string()
+    }
+}
+
 /// Prints the identifier as a string that should be losslessly convertible
 /// back into the same identifier.
 impl fmt::Display for Ident {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.to_string())
+        f.write_str(&self.adhoc_to_string())
     }
 }
 
@@ -1061,11 +1218,19 @@ impl FromStr for Literal {
     }
 }
 
+// N.B., the bridge only provides `to_string`, implement `fmt::Display`
+// based on it (the reverse of the usual relationship between the two).
+impl Literal {
+    fn adhoc_to_string(&self) -> String {
+        self.0.to_string()
+    }
+}
+
 /// Prints the literal as a string that should be losslessly convertible
 /// back into the same literal (except for possible rounding for floating point literals).
 impl fmt::Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.to_string())
+        f.write_str(&self.adhoc_to_string())
     }
 }
 
@@ -1075,32 +1240,32 @@ impl fmt::Debug for Literal {
     }
 }
 
-/// Tracked access to environment variables.
-pub mod tracked_env {
-    use std::env::{self, VarError};
-    use std::ffi::OsStr;
+// /// Tracked access to environment variables.
+// pub mod tracked_env {
+//     use std::env::{self, VarError};
+//     use std::ffi::OsStr;
 
-    /// Retrieve an environment variable and add it to build dependency info.
-    /// Build system executing the compiler will know that the variable was accessed during
-    /// compilation, and will be able to rerun the build when the value of that variable changes.
-    /// Besides the dependency tracking this function should be equivalent to `env::var` from the
-    /// standard library, except that the argument must be UTF-8.
-    pub fn var<K: AsRef<OsStr> + AsRef<str>>(key: K) -> Result<String, VarError> {
-        let key: &str = key.as_ref();
-        let value = env::var(key);
-        super::bridge::client::FreeFunctions::track_env_var(key, value.as_deref().ok());
-        value
-    }
-}
+//     /// Retrieve an environment variable and add it to build dependency info.
+//     /// Build system executing the compiler will know that the variable was accessed during
+//     /// compilation, and will be able to rerun the build when the value of that variable changes.
+//     /// Besides the dependency tracking this function should be equivalent to `env::var` from the
+//     /// standard library, except that the argument must be UTF-8.
+//     pub fn var<K: AsRef<OsStr> + AsRef<str>>(key: K) -> Result<String, VarError> {
+//         let key: &str = key.as_ref();
+//         let value = env::var(key);
+//         bridge::client::FreeFunctions::track_env_var(key, value.as_deref().ok());
+//         value
+//     }
+// }
 
-/// Tracked access to additional files.
-pub mod tracked_path {
+// /// Tracked access to additional files.
+// pub mod tracked_path {
 
-    /// Track a file explicitly.
-    ///
-    /// Commonly used for tracking asset preprocessing.
-    pub fn path<P: AsRef<str>>(path: P) {
-        let path: &str = path.as_ref();
-        super::bridge::client::FreeFunctions::track_path(path);
-    }
-}
+//     /// Track a file explicitly.
+//     ///
+//     /// Commonly used for tracking asset preprocessing.
+//     pub fn path<P: AsRef<str>>(path: P) {
+//         let path: &str = path.as_ref();
+//         bridge::client::FreeFunctions::track_path(path);
+//     }
+// }

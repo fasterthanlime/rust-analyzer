@@ -65,11 +65,11 @@ macro_rules! with_api {
                 fn from_str(src: &str) -> $S::TokenStream;
                 fn to_string($self: &$S::TokenStream) -> String;
                 fn from_token_tree(
-                    tree: TokenTree<$S::Group, $S::Punct, $S::Ident, $S::Literal>,
+                    tree: TokenTree<$S::TokenStream, $S::Span, $S::Ident, $S::Literal>,
                 ) -> $S::TokenStream;
                 fn concat_trees(
                     base: Option<$S::TokenStream>,
-                    trees: Vec<TokenTree<$S::Group, $S::Punct, $S::Ident, $S::Literal>>,
+                    trees: Vec<TokenTree<$S::TokenStream, $S::Span, $S::Ident, $S::Literal>>,
                 ) -> $S::TokenStream;
                 fn concat_streams(
                     base: Option<$S::TokenStream>,
@@ -77,25 +77,7 @@ macro_rules! with_api {
                 ) -> $S::TokenStream;
                 fn into_trees(
                     $self: $S::TokenStream
-                ) -> Vec<TokenTree<$S::Group, $S::Punct, $S::Ident, $S::Literal>>;
-            },
-            Group {
-                fn drop($self: $S::Group);
-                fn clone($self: &$S::Group) -> $S::Group;
-                fn new(delimiter: Delimiter, stream: Option<$S::TokenStream>) -> $S::Group;
-                fn delimiter($self: &$S::Group) -> Delimiter;
-                fn stream($self: &$S::Group) -> $S::TokenStream;
-                fn span($self: &$S::Group) -> $S::Span;
-                fn span_open($self: &$S::Group) -> $S::Span;
-                fn span_close($self: &$S::Group) -> $S::Span;
-                fn set_span($self: &mut $S::Group, span: $S::Span);
-            },
-            Punct {
-                fn new(ch: char, spacing: Spacing) -> $S::Punct;
-                fn as_char($self: $S::Punct) -> char;
-                fn spacing($self: $S::Punct) -> Spacing;
-                fn span($self: $S::Punct) -> $S::Span;
-                fn with_span($self: $S::Punct, span: $S::Span) -> $S::Punct;
+                ) -> Vec<TokenTree<$S::TokenStream, $S::Span, $S::Ident, $S::Literal>>;
             },
             Ident {
                 fn new(string: &str, span: $S::Span, is_raw: bool) -> $S::Ident;
@@ -151,9 +133,6 @@ macro_rules! with_api {
             },
             Span {
                 fn debug($self: $S::Span) -> String;
-                fn def_site() -> $S::Span;
-                fn call_site() -> $S::Span;
-                fn mixed_site() -> $S::Span;
                 fn source_file($self: $S::Span) -> $S::SourceFile;
                 fn parent($self: $S::Span) -> Option<$S::Span>;
                 fn source($self: $S::Span) -> $S::Span;
@@ -213,16 +192,15 @@ use buffer::Buffer;
 pub use rpc::PanicMessage;
 use rpc::{Decode, DecodeMut, Encode, Reader, Writer};
 
-/// An active connection between a server and a client.
-/// The server creates the bridge (`Bridge::run_server` in `server.rs`),
-/// then passes it to the client through the function pointer in the `run`
-/// field of `client::Client`. The client holds its copy of the `Bridge`
+/// Configuration for establishing an active connection between a server and a
+/// client.  The server creates the bridge config (`run_server` in `server.rs`),
+/// then passes it to the client through the function pointer in the `run` field
+/// of `client::Client`. The client constructs a local `Bridge` from the config
 /// in TLS during its execution (`Bridge::{enter, with}` in `client.rs`).
 #[repr(C)]
-pub struct Bridge<'a> {
-    /// Reusable buffer (only `clear`-ed, never shrunk), primarily
-    /// used for making requests, but also for passing input to client.
-    cached_buffer: Buffer,
+pub struct BridgeConfig<'a> {
+    /// Buffer used to pass initial input to the client.
+    input: Buffer,
 
     /// Server-side function that the client uses to make requests.
     dispatch: closure::Closure<'a, Buffer, Buffer>,
@@ -347,6 +325,7 @@ mark_noop! {
     &'_ [u8],
     &'_ str,
     String,
+    u8,
     usize,
     Delimiter,
     Level,
@@ -379,6 +358,25 @@ rpc_encode_decode!(
 );
 
 macro_rules! mark_compound {
+    (struct $name:ident <$($T:ident),+> { $($field:ident),* $(,)? }) => {
+        impl<$($T: Mark),+> Mark for $name <$($T),+> {
+            type Unmarked = $name <$($T::Unmarked),+>;
+            fn mark(unmarked: Self::Unmarked) -> Self {
+                $name {
+                    $($field: Mark::mark(unmarked.$field)),*
+                }
+            }
+        }
+
+        impl<$($T: Unmark),+> Unmark for $name <$($T),+> {
+            type Unmarked = $name <$($T::Unmarked),+>;
+            fn unmark(self) -> Self::Unmarked {
+                $name {
+                    $($field: Unmark::unmark(self.$field)),*
+                }
+            }
+        }
+    };
     (enum $name:ident <$($T:ident),+> { $($variant:ident $(($field:ident))?),* $(,)? }) => {
         impl<$($T: Mark),+> Mark for $name <$($T),+> {
             type Unmarked = $name <$($T::Unmarked),+>;
@@ -433,19 +431,65 @@ compound_traits!(
     }
 );
 
+#[derive(Copy, Clone)]
+pub struct DelimSpan<Span> {
+    pub open: Span,
+    pub close: Span,
+    pub entire: Span,
+}
+
+impl<Span: Copy> DelimSpan<Span> {
+    pub fn from_single(span: Span) -> Self {
+        DelimSpan { open: span, close: span, entire: span }
+    }
+}
+
+compound_traits!(struct DelimSpan<Span> { open, close, entire });
+
 #[derive(Clone)]
-pub enum TokenTree<G, P, I, L> {
-    Group(G),
-    Punct(P),
-    Ident(I),
-    Literal(L),
+pub struct Group<TokenStream, Span> {
+    pub delimiter: Delimiter,
+    pub stream: Option<TokenStream>,
+    pub span: DelimSpan<Span>,
+}
+
+compound_traits!(struct Group<TokenStream, Span> { delimiter, stream, span });
+
+#[derive(Clone)]
+pub struct Punct<Span> {
+    pub ch: u8,
+    pub joint: bool,
+    pub span: Span,
+}
+
+compound_traits!(struct Punct<Span> { ch, joint, span });
+
+#[derive(Clone)]
+pub enum TokenTree<TokenStream, Span, Ident, Literal> {
+    Group(Group<TokenStream, Span>),
+    Punct(Punct<Span>),
+    Ident(Ident),
+    Literal(Literal),
 }
 
 compound_traits!(
-    enum TokenTree<G, P, I, L> {
+    enum TokenTree<TokenStream, Span, Ident, Literal> {
         Group(tt),
         Punct(tt),
         Ident(tt),
         Literal(tt),
     }
+);
+
+/// Globals provided alongside the initial inputs for a macro expansion.
+/// Provides values such as spans which are used frequently to avoid RPC.
+#[derive(Clone)]
+pub struct ExpnGlobals<Span> {
+    pub def_site: Span,
+    pub call_site: Span,
+    pub mixed_site: Span,
+}
+
+compound_traits!(
+    struct ExpnGlobals<Span> { def_site, call_site, mixed_site }
 );

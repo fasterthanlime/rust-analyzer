@@ -61,7 +61,7 @@ macro_rules! quote {
 /// It is loaded by the compiler in `register_builtin_macros`.
 pub fn quote(stream: TokenStream) -> TokenStream {
     if stream.is_empty() {
-        return quote!(super::TokenStream::new());
+        return quote!(crate::TokenStream::new());
     }
     let proc_macro_crate = quote!(crate);
     let mut after_dollar = false;
@@ -72,7 +72,7 @@ pub fn quote(stream: TokenStream) -> TokenStream {
                 after_dollar = false;
                 match tree {
                     TokenTree::Ident(_) => {
-                        return Some(quote!(Into::<super::TokenStream>::into(
+                        return Some(quote!(Into::<crate::TokenStream>::into(
                         Clone::clone(&(@ tree))),));
                     }
                     TokenTree::Punct(ref tt) if tt.as_char() == '$' => {}
@@ -85,33 +85,33 @@ pub fn quote(stream: TokenStream) -> TokenStream {
                 }
             }
 
-            Some(quote!(super::TokenStream::from((@ match tree {
-                TokenTree::Punct(tt) => quote!(super::TokenTree::Punct(super::Punct::new(
+            Some(quote!(crate::TokenStream::from((@ match tree {
+                TokenTree::Punct(tt) => quote!(crate::TokenTree::Punct(crate::Punct::new(
                     (@ TokenTree::from(Literal::character(tt.as_char()))),
                     (@ match tt.spacing() {
-                        Spacing::Alone => quote!(super::Spacing::Alone),
-                        Spacing::Joint => quote!(super::Spacing::Joint),
+                        Spacing::Alone => quote!(crate::Spacing::Alone),
+                        Spacing::Joint => quote!(crate::Spacing::Joint),
                     }),
                 ))),
-                TokenTree::Group(tt) => quote!(super::TokenTree::Group(super::Group::new(
+                TokenTree::Group(tt) => quote!(crate::TokenTree::Group(crate::Group::new(
                     (@ match tt.delimiter() {
-                        Delimiter::Parenthesis => quote!(super::Delimiter::Parenthesis),
-                        Delimiter::Brace => quote!(super::Delimiter::Brace),
-                        Delimiter::Bracket => quote!(super::Delimiter::Bracket),
-                        Delimiter::None => quote!(super::Delimiter::None),
+                        Delimiter::Parenthesis => quote!(crate::Delimiter::Parenthesis),
+                        Delimiter::Brace => quote!(crate::Delimiter::Brace),
+                        Delimiter::Bracket => quote!(crate::Delimiter::Bracket),
+                        Delimiter::None => quote!(crate::Delimiter::None),
                     }),
                     (@ quote(tt.stream())),
                 ))),
-                TokenTree::Ident(tt) => quote!(super::TokenTree::Ident(super::Ident::new(
+                TokenTree::Ident(tt) => quote!(crate::TokenTree::Ident(crate::Ident::new(
                     (@ TokenTree::from(Literal::string(&tt.to_string()))),
                     (@ quote_span(proc_macro_crate.clone(), tt.span())),
                 ))),
-                TokenTree::Literal(tt) => quote!(super::TokenTree::Literal({
+                TokenTree::Literal(tt) => quote!(crate::TokenTree::Literal({
                     let mut iter = (@ TokenTree::from(Literal::string(&tt.to_string())))
-                        .parse::<super::TokenStream>()
+                        .parse::<crate::TokenStream>()
                         .unwrap()
                         .into_iter();
-                    if let (Some(super::TokenTree::Literal(mut lit)), None) =
+                    if let (Some(crate::TokenTree::Literal(mut lit)), None) =
                         (iter.next(), iter.next())
                     {
                         lit.set_span((@ quote_span(proc_macro_crate.clone(), tt.span())));
@@ -128,7 +128,7 @@ pub fn quote(stream: TokenStream) -> TokenStream {
         panic!("unexpected trailing `$` in `quote!`");
     }
 
-    quote!([(@ tokens)].iter().cloned().collect::<super::TokenStream>())
+    quote!([(@ tokens)].iter().cloned().collect::<crate::TokenStream>())
 }
 
 /// Quote a `Span` into a `TokenStream`.

@@ -8,7 +8,10 @@
 //!
 //! FIXME: No span and source file information is implemented yet
 
-use super::proc_macro::bridge::{self, server};
+use super::proc_macro::{
+    bridge::{self, server},
+    MultiSpan,
+};
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -276,14 +279,12 @@ pub struct Rustc {
 impl server::Types for Rustc {
     type FreeFunctions = FreeFunctions;
     type TokenStream = TokenStream;
-    type Group = Group;
-    type Punct = Punct;
     type Ident = IdentId;
     type Literal = Literal;
     type SourceFile = SourceFile;
+    type MultiSpan = Vec<Span>;
     type Diagnostic = Diagnostic;
     type Span = Span;
-    type MultiSpan = Vec<Span>;
 }
 
 impl server::FreeFunctions for Rustc {
@@ -308,12 +309,13 @@ impl server::TokenStream for Rustc {
     }
     fn from_token_tree(
         &mut self,
-        tree: bridge::TokenTree<Self::Group, Self::Punct, Self::Ident, Self::Literal>,
+        tree: bridge::TokenTree<Self::TokenStream, Self::Span, Self::Ident, Self::Literal>,
     ) -> Self::TokenStream {
         match tree {
             bridge::TokenTree::Group(group) => {
-                let tree = TokenTree::from(group);
-                Self::TokenStream::from_iter(vec![tree])
+                // let tree = TokenTree::from(group);
+                // Self::TokenStream::from_iter(vec![tree])
+                group.stream.unwrap_or_default()
             }
 
             bridge::TokenTree::Ident(IdentId(index)) => {
@@ -331,6 +333,11 @@ impl server::TokenStream for Rustc {
             }
 
             bridge::TokenTree::Punct(p) => {
+                let p = tt::Punct {
+                    spacing: if p.joint { tt::Spacing::Joint } else { tt::Spacing::Alone },
+                    char: p.ch as _,
+                    id: p.span,
+                };
                 let leaf = tt::Leaf::from(p);
                 let tree = TokenTree::from(leaf);
                 Self::TokenStream::from_iter(vec![tree])
@@ -345,7 +352,7 @@ impl server::TokenStream for Rustc {
     fn concat_trees(
         &mut self,
         base: Option<Self::TokenStream>,
-        trees: Vec<bridge::TokenTree<Self::Group, Self::Punct, Self::Ident, Self::Literal>>,
+        trees: Vec<bridge::TokenTree<Self::TokenStream, Self::Span, Self::Ident, Self::Literal>>,
     ) -> Self::TokenStream {
         let mut builder = TokenStreamBuilder::new();
         if let Some(base) = base {
@@ -375,7 +382,7 @@ impl server::TokenStream for Rustc {
     fn into_trees(
         &mut self,
         stream: Self::TokenStream,
-    ) -> Vec<bridge::TokenTree<Self::Group, Self::Punct, Self::Ident, Self::Literal>> {
+    ) -> Vec<bridge::TokenTree<Self::TokenStream, Self::Span, Self::Ident, Self::Literal>> {
         stream
             .into_iter()
             .map(|tree| match tree {
@@ -383,8 +390,30 @@ impl server::TokenStream for Rustc {
                     bridge::TokenTree::Ident(IdentId(self.ident_interner.intern(&IdentData(ident))))
                 }
                 tt::TokenTree::Leaf(tt::Leaf::Literal(lit)) => bridge::TokenTree::Literal(lit),
-                tt::TokenTree::Leaf(tt::Leaf::Punct(punct)) => bridge::TokenTree::Punct(punct),
-                tt::TokenTree::Subtree(subtree) => bridge::TokenTree::Group(subtree),
+                tt::TokenTree::Leaf(tt::Leaf::Punct(punct)) => {
+                    bridge::TokenTree::Punct(bridge::Punct {
+                        ch: punct.char as _,
+                        joint: punct.spacing == tt::Spacing::Joint,
+                        span: punct.id,
+                    })
+                }
+                tt::TokenTree::Subtree(subtree) => bridge::TokenTree::Group(bridge::Group {
+                    delimiter: match &subtree.delimiter {
+                        Some(delim) => match &delim.kind {
+                            mbe::DelimiterKind::Parenthesis => bridge::Delimiter::Parenthesis,
+                            mbe::DelimiterKind::Brace => bridge::Delimiter::Brace,
+                            mbe::DelimiterKind::Bracket => bridge::Delimiter::Bracket,
+                        },
+                        None => bridge::Delimiter::None,
+                    },
+                    stream: Some(TokenStream { token_trees: subtree.token_trees }),
+                    // TODO: handle spans
+                    span: bridge::DelimSpan {
+                        open: Span::unspecified(),
+                        close: Span::unspecified(),
+                        entire: Span::unspecified(),
+                    },
+                }),
             })
             .collect()
     }
@@ -423,68 +452,68 @@ fn spacing_to_external(spacing: Spacing) -> bridge::Spacing {
     }
 }
 
-impl server::Group for Rustc {
-    fn new(
-        &mut self,
-        delimiter: bridge::Delimiter,
-        stream: Option<Self::TokenStream>,
-    ) -> Self::Group {
-        Self::Group {
-            delimiter: delim_to_internal(delimiter),
-            token_trees: stream.unwrap_or_default().token_trees,
-        }
-    }
-    fn delimiter(&mut self, group: &Self::Group) -> bridge::Delimiter {
-        delim_to_external(group.delimiter)
-    }
+// impl server::Group for Rustc {
+//     fn new(
+//         &mut self,
+//         delimiter: bridge::Delimiter,
+//         stream: Option<Self::TokenStream>,
+//     ) -> Self::Group {
+//         Self::Group {
+//             delimiter: delim_to_internal(delimiter),
+//             token_trees: stream.unwrap_or_default().token_trees,
+//         }
+//     }
+//     fn delimiter(&mut self, group: &Self::Group) -> bridge::Delimiter {
+//         delim_to_external(group.delimiter)
+//     }
 
-    // NOTE: Return value of do not include delimiter
-    fn stream(&mut self, group: &Self::Group) -> Self::TokenStream {
-        TokenStream { token_trees: group.token_trees.clone() }
-    }
+//     // NOTE: Return value of do not include delimiter
+//     fn stream(&mut self, group: &Self::Group) -> Self::TokenStream {
+//         TokenStream { token_trees: group.token_trees.clone() }
+//     }
 
-    fn span(&mut self, group: &Self::Group) -> Self::Span {
-        group.delimiter.map(|it| it.id).unwrap_or_else(tt::TokenId::unspecified)
-    }
+//     fn span(&mut self, group: &Self::Group) -> Self::Span {
+//         group.delimiter.map(|it| it.id).unwrap_or_else(tt::TokenId::unspecified)
+//     }
 
-    fn set_span(&mut self, group: &mut Self::Group, span: Self::Span) {
-        if let Some(delim) = &mut group.delimiter {
-            delim.id = span;
-        }
-    }
+//     fn set_span(&mut self, group: &mut Self::Group, span: Self::Span) {
+//         if let Some(delim) = &mut group.delimiter {
+//             delim.id = span;
+//         }
+//     }
 
-    fn span_open(&mut self, group: &Self::Group) -> Self::Span {
-        // FIXME we only store one `TokenId` for the delimiters
-        group.delimiter.map(|it| it.id).unwrap_or_else(tt::TokenId::unspecified)
-    }
+//     fn span_open(&mut self, group: &Self::Group) -> Self::Span {
+//         // FIXME we only store one `TokenId` for the delimiters
+//         group.delimiter.map(|it| it.id).unwrap_or_else(tt::TokenId::unspecified)
+//     }
 
-    fn span_close(&mut self, group: &Self::Group) -> Self::Span {
-        // FIXME we only store one `TokenId` for the delimiters
-        group.delimiter.map(|it| it.id).unwrap_or_else(tt::TokenId::unspecified)
-    }
-}
+//     fn span_close(&mut self, group: &Self::Group) -> Self::Span {
+//         // FIXME we only store one `TokenId` for the delimiters
+//         group.delimiter.map(|it| it.id).unwrap_or_else(tt::TokenId::unspecified)
+//     }
+// }
 
-impl server::Punct for Rustc {
-    fn new(&mut self, ch: char, spacing: bridge::Spacing) -> Self::Punct {
-        tt::Punct {
-            char: ch,
-            spacing: spacing_to_internal(spacing),
-            id: tt::TokenId::unspecified(),
-        }
-    }
-    fn as_char(&mut self, punct: Self::Punct) -> char {
-        punct.char
-    }
-    fn spacing(&mut self, punct: Self::Punct) -> bridge::Spacing {
-        spacing_to_external(punct.spacing)
-    }
-    fn span(&mut self, punct: Self::Punct) -> Self::Span {
-        punct.id
-    }
-    fn with_span(&mut self, punct: Self::Punct, span: Self::Span) -> Self::Punct {
-        tt::Punct { id: span, ..punct }
-    }
-}
+// impl server::Punct for Rustc {
+//     fn new(&mut self, ch: char, spacing: bridge::Spacing) -> Self::Punct {
+//         tt::Punct {
+//             char: ch,
+//             spacing: spacing_to_internal(spacing),
+//             id: tt::TokenId::unspecified(),
+//         }
+//     }
+//     fn as_char(&mut self, punct: Self::Punct) -> char {
+//         punct.char
+//     }
+//     fn spacing(&mut self, punct: Self::Punct) -> bridge::Spacing {
+//         spacing_to_external(punct.spacing)
+//     }
+//     fn span(&mut self, punct: Self::Punct) -> Self::Span {
+//         punct.id
+//     }
+//     fn with_span(&mut self, punct: Self::Punct, span: Self::Span) -> Self::Punct {
+//         tt::Punct { id: span, ..punct }
+//     }
+// }
 
 impl server::Ident for Rustc {
     fn new(&mut self, string: &str, span: Self::Span, _is_raw: bool) -> Self::Ident {
@@ -653,16 +682,16 @@ impl server::Span for Rustc {
     fn debug(&mut self, span: Self::Span) -> String {
         format!("{:?}", span.0)
     }
-    fn def_site(&mut self) -> Self::Span {
-        // MySpan(self.span_interner.intern(&MySpanData(Span::def_site())))
-        // FIXME handle span
-        tt::TokenId::unspecified()
-    }
-    fn call_site(&mut self) -> Self::Span {
-        // MySpan(self.span_interner.intern(&MySpanData(Span::call_site())))
-        // FIXME handle span
-        tt::TokenId::unspecified()
-    }
+    // fn def_site(&mut self) -> Self::Span {
+    //     // MySpan(self.span_interner.intern(&MySpanData(Span::def_site())))
+    //     // FIXME handle span
+    //     tt::TokenId::unspecified()
+    // }
+    // fn call_site(&mut self) -> Self::Span {
+    //     // MySpan(self.span_interner.intern(&MySpanData(Span::call_site())))
+    //     // FIXME handle span
+    //     tt::TokenId::unspecified()
+    // }
     fn source_file(&mut self, _span: Self::Span) -> Self::SourceFile {
         SourceFile {}
     }
@@ -707,10 +736,10 @@ impl server::Span for Rustc {
         tt::TokenId::unspecified()
     }
 
-    fn mixed_site(&mut self) -> Self::Span {
-        // FIXME handle span
-        tt::TokenId::unspecified()
-    }
+    // fn mixed_site(&mut self) -> Self::Span {
+    //     // FIXME handle span
+    //     tt::TokenId::unspecified()
+    // }
 
     fn after(&mut self, _self_: Self::Span) -> Self::Span {
         tt::TokenId::unspecified()
