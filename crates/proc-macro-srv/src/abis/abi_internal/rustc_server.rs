@@ -309,7 +309,7 @@ impl server::TokenStream for Rustc {
     }
     fn from_token_tree(
         &mut self,
-        tree: bridge::TokenTree<Self::Group, Self::Punct, Self::Ident, Self::Literal>,
+        tree: bridge::TokenTree<Self::TokenStream, Self::Span, Self::Ident, Self::Literal>,
     ) -> Self::TokenStream {
         match tree {
             bridge::TokenTree::Group(group) => {
@@ -341,6 +341,67 @@ impl server::TokenStream for Rustc {
 
     fn expand_expr(&mut self, self_: &Self::TokenStream) -> Result<Self::TokenStream, ()> {
         Ok(self_.clone())
+    }
+
+    fn concat_trees(
+        &mut self,
+        base: Option<Self::TokenStream>,
+        trees: Vec<bridge::TokenTree<Self::TokenStream, Self::Span, Self::Ident, Self::Literal>>,
+    ) -> Self::TokenStream {
+        let mut builder = TokenStreamBuilder::new();
+        if let Some(base) = base {
+            builder.push(base);
+        }
+        for tree in trees {
+            builder.push(self.from_token_tree(tree));
+        }
+        builder.build()
+    }
+
+    fn concat_streams(
+        &mut self,
+        base: Option<Self::TokenStream>,
+        streams: Vec<Self::TokenStream>,
+    ) -> Self::TokenStream {
+        let mut builder = TokenStreamBuilder::new();
+        if let Some(base) = base {
+            builder.push(base);
+        }
+        for stream in streams {
+            builder.push(stream);
+        }
+        builder.build()
+    }
+
+    fn into_trees(
+        &mut self,
+        stream: Self::TokenStream,
+    ) -> Vec<bridge::TokenTree<Self::TokenStream, Self::Span, Self::Ident, Self::Literal>> {
+        stream
+            .into_iter()
+            .map(|tree| match tree {
+                tt::TokenTree::Leaf(tt::Leaf::Ident(ident)) => {
+                    bridge::TokenTree::Ident(IdentId(self.ident_interner.intern(&IdentData(ident))))
+                }
+                tt::TokenTree::Leaf(tt::Leaf::Literal(lit)) => bridge::TokenTree::Literal(lit),
+                tt::TokenTree::Leaf(tt::Leaf::Punct(punct)) => {
+                    bridge::TokenTree::Punct(bridge::Punct {
+                        ch: punct.char as _,
+                        joint: punct.spacing == tt::Spacing::Joint,
+                        span: punct.id,
+                    })
+                }
+                tt::TokenTree::Subtree(subtree) => bridge::TokenTree::Group(bridge::Group {
+                    delimiter: delim_to_external(subtree.delimiter),
+                    stream: Some(TokenStream { token_trees: subtree.token_trees }),
+                    span: bridge::DelimSpan {
+                        open: Span::unspecified(),
+                        close: Span::unspecified(),
+                        entire: Span::unspecified(),
+                    },
+                }),
+            })
+            .collect()
     }
 }
 
