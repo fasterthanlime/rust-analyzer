@@ -3,7 +3,7 @@ use super::Span;
 /// An enum representing a diagnostic level.
 #[derive(Copy, Clone, Debug)]
 #[non_exhaustive]
-pub enum Level {
+pub(crate) enum Level {
     /// An error.
     Error,
     /// A warning.
@@ -15,7 +15,7 @@ pub enum Level {
 }
 
 /// Trait implemented by types that can be converted into a set of `Span`s.
-pub trait MultiSpan {
+pub(crate) trait MultiSpan {
     /// Converts `self` into a `Vec<Span>`.
     fn into_spans(self) -> Vec<Span>;
 }
@@ -41,7 +41,7 @@ impl<'a> MultiSpan for &'a [Span] {
 /// A structure representing a diagnostic message and associated children
 /// messages.
 #[derive(Clone, Debug)]
-pub struct Diagnostic {
+pub(crate) struct Diagnostic {
     level: Level,
     message: String,
     spans: Vec<Span>,
@@ -52,7 +52,7 @@ macro_rules! diagnostic_child_methods {
     ($spanned:ident, $regular:ident, $level:expr) => {
         #[doc = concat!("Adds a new child diagnostics message to `self` with the [`",
                         stringify!($level), "`] level, and the given `spans` and `message`.")]
-        pub fn $spanned<S, T>(mut self, spans: S, message: T) -> Diagnostic
+        pub(crate) fn $spanned<S, T>(mut self, spans: S, message: T) -> Diagnostic
         where
             S: MultiSpan,
             T: Into<String>,
@@ -63,7 +63,7 @@ macro_rules! diagnostic_child_methods {
 
         #[doc = concat!("Adds a new child diagnostic message to `self` with the [`",
                         stringify!($level), "`] level, and the given `message`.")]
-        pub fn $regular<T: Into<String>>(mut self, message: T) -> Diagnostic {
+        pub(crate) fn $regular<T: Into<String>>(mut self, message: T) -> Diagnostic {
             self.children.push(Diagnostic::new($level, message));
             self
         }
@@ -72,7 +72,7 @@ macro_rules! diagnostic_child_methods {
 
 /// Iterator over the children diagnostics of a `Diagnostic`.
 #[derive(Debug, Clone)]
-pub struct Children<'a>(std::slice::Iter<'a, Diagnostic>);
+pub(crate) struct Children<'a>(std::slice::Iter<'a, Diagnostic>);
 
 impl<'a> Iterator for Children<'a> {
     type Item = &'a Diagnostic;
@@ -84,13 +84,13 @@ impl<'a> Iterator for Children<'a> {
 
 impl Diagnostic {
     /// Creates a new diagnostic with the given `level` and `message`.
-    pub fn new<T: Into<String>>(level: Level, message: T) -> Diagnostic {
+    pub(crate) fn new<T: Into<String>>(level: Level, message: T) -> Diagnostic {
         Diagnostic { level, message: message.into(), spans: vec![], children: vec![] }
     }
 
     /// Creates a new diagnostic with the given `level` and `message` pointing to
     /// the given set of `spans`.
-    pub fn spanned<S, T>(spans: S, level: Level, message: T) -> Diagnostic
+    pub(crate) fn spanned<S, T>(spans: S, level: Level, message: T) -> Diagnostic
     where
         S: MultiSpan,
         T: Into<String>,
@@ -104,42 +104,42 @@ impl Diagnostic {
     diagnostic_child_methods!(span_help, help, Level::Help);
 
     /// Returns the diagnostic `level` for `self`.
-    pub fn level(&self) -> Level {
+    pub(crate) fn level(&self) -> Level {
         self.level
     }
 
     /// Sets the level in `self` to `level`.
-    pub fn set_level(&mut self, level: Level) {
+    pub(crate) fn set_level(&mut self, level: Level) {
         self.level = level;
     }
 
     /// Returns the message in `self`.
-    pub fn message(&self) -> &str {
+    pub(crate) fn message(&self) -> &str {
         &self.message
     }
 
     /// Sets the message in `self` to `message`.
-    pub fn set_message<T: Into<String>>(&mut self, message: T) {
+    pub(crate) fn set_message<T: Into<String>>(&mut self, message: T) {
         self.message = message.into();
     }
 
     /// Returns the `Span`s in `self`.
-    pub fn spans(&self) -> &[Span] {
+    pub(crate) fn spans(&self) -> &[Span] {
         &self.spans
     }
 
     /// Sets the `Span`s in `self` to `spans`.
-    pub fn set_spans<S: MultiSpan>(&mut self, spans: S) {
+    pub(crate) fn set_spans<S: MultiSpan>(&mut self, spans: S) {
         self.spans = spans.into_spans();
     }
 
     /// Returns an iterator over the children diagnostics of `self`.
-    pub fn children(&self) -> Children<'_> {
+    pub(crate) fn children(&self) -> Children<'_> {
         Children(self.children.iter())
     }
 
     /// Emit the diagnostic.
-    pub fn emit(self) {
+    pub(crate) fn emit(self) {
         fn to_internal(spans: Vec<Span>) -> super::bridge::client::MultiSpan {
             let mut multi_span = super::bridge::client::MultiSpan::new();
             for span in spans {

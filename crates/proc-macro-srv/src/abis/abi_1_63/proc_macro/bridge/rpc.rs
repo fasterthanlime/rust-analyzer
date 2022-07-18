@@ -247,7 +247,7 @@ impl<'a, S, T: for<'s> DecodeMut<'a, 's, S>> DecodeMut<'a, '_, S> for Vec<T> {
 
 /// Simplified version of panic payloads, ignoring
 /// types other than `&'static str` and `String`.
-pub enum PanicMessage {
+pub(crate) enum PanicMessage {
     StaticStr(&'static str),
     String(String),
     Unknown,
@@ -279,7 +279,7 @@ impl Into<Box<dyn Any + Send>> for PanicMessage {
 }
 
 impl PanicMessage {
-    pub fn as_str(&self) -> Option<&str> {
+    pub(crate) fn as_str(&self) -> Option<&str> {
         match self {
             PanicMessage::StaticStr(s) => Some(s),
             PanicMessage::String(s) => Some(s),

@@ -11,7 +11,7 @@ macro_rules! define_handles {
     ) => {
         #[repr(C)]
         #[allow(non_snake_case)]
-        pub struct HandleCounters {
+        pub(crate) struct HandleCounters {
             $($oty: AtomicUsize,)*
             $($ity: AtomicUsize,)*
         }
@@ -358,7 +358,7 @@ pub(crate) fn is_available() -> bool {
 /// indicating that the RPC input and output will be serialized token streams,
 /// and forcing the use of APIs that take/return `S::TokenStream`, server-side.
 #[repr(C)]
-pub struct Client<I, O> {
+pub(crate) struct Client<I, O> {
     // FIXME(eddyb) use a reference to the `static COUNTERS`, instead of
     // a wrapper `fn` pointer, once `const fn` can reference `static`s.
     pub(super) get_handle_counters: extern "C" fn() -> &'static HandleCounters,
@@ -478,7 +478,7 @@ impl Client<(super::super::TokenStream, super::super::TokenStream), super::super
 
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub enum ProcMacro {
+pub(crate) enum ProcMacro {
     CustomDerive {
         trait_name: &'static str,
         attributes: &'static [&'static str],
@@ -500,7 +500,7 @@ pub enum ProcMacro {
 }
 
 impl ProcMacro {
-    pub fn name(&self) -> &'static str {
+    pub(crate) fn name(&self) -> &'static str {
         match self {
             ProcMacro::CustomDerive { trait_name, .. } => trait_name,
             ProcMacro::Attr { name, .. } => name,

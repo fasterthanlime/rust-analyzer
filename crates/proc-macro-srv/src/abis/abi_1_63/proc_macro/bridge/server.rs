@@ -5,7 +5,7 @@ use super::*;
 // FIXME(eddyb) generate the definition of `HandleStore` in `server.rs`.
 use super::client::HandleStore;
 
-pub trait Types {
+pub(crate) trait Types {
     type FreeFunctions: 'static;
     type TokenStream: 'static + Clone;
     type Ident: 'static + Copy + Eq + Hash;
@@ -32,18 +32,18 @@ macro_rules! declare_server_traits {
     ($($name:ident {
         $(fn $method:ident($($arg:ident: $arg_ty:ty),* $(,)?) $(-> $ret_ty:ty)?;)*
     }),* $(,)?) => {
-        $(pub trait $name: Types {
+        $(pub(crate) trait $name: Types {
             $(associated_fn!(fn $method(&mut self, $($arg: $arg_ty),*) $(-> $ret_ty)?);)*
         })*
 
-        pub trait Server: Types $(+ $name)* {
+        pub(crate) trait Server: Types $(+ $name)* {
             fn globals(&mut self) -> ExpnGlobals<Self::Span>;
         }
     }
 }
 with_api!(Self, self_, declare_server_traits);
 
-pub struct MarkedTypes<S: Types>(pub S);
+pub(crate) struct MarkedTypes<S: Types>(pub S);
 
 impl<S: Server> Server for MarkedTypes<S> {
     fn globals(&mut self) -> ExpnGlobals<Self::Span> {
@@ -78,7 +78,7 @@ macro_rules! define_dispatcher_impl {
         $(fn $method:ident($($arg:ident: $arg_ty:ty),* $(,)?) $(-> $ret_ty:ty)?;)*
     }),* $(,)?) => {
         // FIXME(eddyb) `pub` only for `ExecutionStrategy` below.
-        pub trait DispatcherTrait {
+        pub(crate) trait DispatcherTrait {
             // HACK(eddyb) these are here to allow `Self::$name` to work below.
             $(type $name;)*
             fn dispatch(&mut self, buf: Buffer) -> Buffer;
@@ -120,7 +120,7 @@ macro_rules! define_dispatcher_impl {
 }
 with_api!(Self, self_, define_dispatcher_impl);
 
-pub trait ExecutionStrategy {
+pub(crate) trait ExecutionStrategy {
     fn run_bridge_and_client(
         &self,
         dispatcher: &mut impl DispatcherTrait,
@@ -130,7 +130,7 @@ pub trait ExecutionStrategy {
     ) -> Buffer;
 }
 
-pub struct SameThread;
+pub(crate) struct SameThread;
 
 impl ExecutionStrategy for SameThread {
     fn run_bridge_and_client(
@@ -154,7 +154,7 @@ impl ExecutionStrategy for SameThread {
 // NOTE(eddyb) Two implementations are provided, the second one is a bit
 // faster but neither is anywhere near as fast as same-thread execution.
 
-pub struct CrossThread1;
+pub(crate) struct CrossThread1;
 
 impl ExecutionStrategy for CrossThread1 {
     fn run_bridge_and_client(
@@ -191,7 +191,7 @@ impl ExecutionStrategy for CrossThread1 {
     }
 }
 
-pub struct CrossThread2;
+pub(crate) struct CrossThread2;
 
 impl ExecutionStrategy for CrossThread2 {
     fn run_bridge_and_client(
@@ -280,7 +280,7 @@ fn run_server<
 }
 
 impl client::Client<super::super::TokenStream, super::super::TokenStream> {
-    pub fn run<S>(
+    pub(crate) fn run<S>(
         &self,
         strategy: &impl ExecutionStrategy,
         server: S,
@@ -310,7 +310,7 @@ impl
         super::super::TokenStream,
     >
 {
-    pub fn run<S>(
+    pub(crate) fn run<S>(
         &self,
         strategy: &impl ExecutionStrategy,
         server: S,

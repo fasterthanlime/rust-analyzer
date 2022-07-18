@@ -30,7 +30,7 @@ impl Abi {
         Ok(Self { exported_macros: macros.to_vec() })
     }
 
-    pub fn expand(
+    pub(crate) fn expand(
         &self,
         macro_name: &str,
         macro_body: &tt::Subtree,
@@ -85,7 +85,7 @@ impl Abi {
         Err(proc_macro::bridge::PanicMessage::String("Nothing to expand".to_string()).into())
     }
 
-    pub fn list_macros(&self) -> Vec<(String, ProcMacroKind)> {
+    pub(crate) fn list_macros(&self) -> Vec<(String, ProcMacroKind)> {
         self.exported_macros
             .iter()
             .map(|proc_macro| match proc_macro {

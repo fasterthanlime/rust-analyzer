@@ -17,7 +17,7 @@ impl<T: for<'a> ApplyL<'a>> LambdaL for T {}
 
 // HACK(eddyb) work around projection limitations with a newtype
 // FIXME(#52812) replace with `&'a mut <T as ApplyL<'b>>::Out`
-pub struct RefMutL<'a, 'b, T: LambdaL>(&'a mut <T as ApplyL<'b>>::Out);
+pub(crate) struct RefMutL<'a, 'b, T: LambdaL>(&'a mut <T as ApplyL<'b>>::Out);
 
 impl<'a, 'b, T: LambdaL> Deref for RefMutL<'a, 'b, T> {
     type Target = <T as ApplyL<'b>>::Out;
@@ -32,7 +32,7 @@ impl<'a, 'b, T: LambdaL> DerefMut for RefMutL<'a, 'b, T> {
     }
 }
 
-pub struct ScopedCell<T: LambdaL>(Cell<<T as ApplyL<'static>>::Out>);
+pub(crate) struct ScopedCell<T: LambdaL>(Cell<<T as ApplyL<'static>>::Out>);
 
 impl<T: LambdaL> ScopedCell<T> {
     pub const fn new(value: <T as ApplyL<'static>>::Out) -> Self {
@@ -43,7 +43,7 @@ impl<T: LambdaL> ScopedCell<T> {
     /// running `f`, which gets the old value, mutably.
     /// The old value will be restored after `f` exits, even
     /// by panic, including modifications made to it by `f`.
-    pub fn replace<'a, R>(
+    pub(crate) fn replace<'a, R>(
         &self,
         replacement: <T as ApplyL<'a>>::Out,
         f: impl for<'b, 'c> FnOnce(RefMutL<'b, 'c, T>) -> R,
@@ -75,7 +75,7 @@ impl<T: LambdaL> ScopedCell<T> {
     }
 
     /// Sets the value in `self` to `value` while running `f`.
-    pub fn set<R>(&self, value: <T as ApplyL<'_>>::Out, f: impl FnOnce() -> R) -> R {
+    pub(crate) fn set<R>(&self, value: <T as ApplyL<'_>>::Out, f: impl FnOnce() -> R) -> R {
         self.replace(value, |_| f())
     }
 }

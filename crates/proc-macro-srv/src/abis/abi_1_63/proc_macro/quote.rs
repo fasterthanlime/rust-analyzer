@@ -59,7 +59,7 @@ macro_rules! quote {
 /// This is the actual implementation of the `quote!()` proc macro.
 ///
 /// It is loaded by the compiler in `register_builtin_macros`.
-pub fn quote(stream: TokenStream) -> TokenStream {
+pub(crate) fn quote(stream: TokenStream) -> TokenStream {
     if stream.is_empty() {
         return quote!(crate::TokenStream::new());
     }
@@ -133,7 +133,7 @@ pub fn quote(stream: TokenStream) -> TokenStream {
 
 /// Quote a `Span` into a `TokenStream`.
 /// This is needed to implement a custom quoter.
-pub fn quote_span(proc_macro_crate: TokenStream, span: Span) -> TokenStream {
+pub(crate) fn quote_span(proc_macro_crate: TokenStream, span: Span) -> TokenStream {
     let id = span.save_span();
     quote!((@ proc_macro_crate ) ::Span::recover_proc_macro_span((@ TokenTree::from(Literal::usize_unsuffixed(id)))))
 }

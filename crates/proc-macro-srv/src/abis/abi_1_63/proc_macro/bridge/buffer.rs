@@ -6,7 +6,7 @@ use std::ops::{Deref, DerefMut};
 use std::slice;
 
 #[repr(C)]
-pub struct Buffer {
+pub(crate) struct Buffer {
     data: *mut u8,
     len: usize,
     capacity: usize,

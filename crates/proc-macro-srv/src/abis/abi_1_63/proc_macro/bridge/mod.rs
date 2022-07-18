@@ -8,7 +8,7 @@
 
 #![deny(unsafe_code)]
 
-pub use super::{Delimiter, Level, LineColumn, Spacing};
+pub(crate) use super::{Delimiter, Level, LineColumn, Spacing};
 use std::fmt;
 use std::hash::Hash;
 use std::marker;
@@ -189,7 +189,7 @@ mod selfless_reify;
 pub mod server;
 
 use buffer::Buffer;
-pub use rpc::PanicMessage;
+pub(crate) use rpc::PanicMessage;
 use rpc::{Decode, DecodeMut, Encode, Reader, Writer};
 
 /// Configuration for establishing an active connection between a server and a
@@ -198,7 +198,7 @@ use rpc::{Decode, DecodeMut, Encode, Reader, Writer};
 /// of `client::Client`. The client constructs a local `Bridge` from the config
 /// in TLS during its execution (`Bridge::{enter, with}` in `client.rs`).
 #[repr(C)]
-pub struct BridgeConfig<'a> {
+pub(crate) struct BridgeConfig<'a> {
     /// Buffer used to pass initial input to the client.
     input: Buffer,
 
@@ -255,7 +255,7 @@ trait Unmark {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
-struct Marked<T, M> {
+pub(crate) struct Marked<T, M> {
     value: T,
     _marker: marker::PhantomData<M>,
 }
@@ -432,14 +432,14 @@ compound_traits!(
 );
 
 #[derive(Copy, Clone)]
-pub struct DelimSpan<Span> {
+pub(crate) struct DelimSpan<Span> {
     pub open: Span,
     pub close: Span,
     pub entire: Span,
 }
 
 impl<Span: Copy> DelimSpan<Span> {
-    pub fn from_single(span: Span) -> Self {
+    pub(crate) fn from_single(span: Span) -> Self {
         DelimSpan { open: span, close: span, entire: span }
     }
 }
@@ -447,7 +447,7 @@ impl<Span: Copy> DelimSpan<Span> {
 compound_traits!(struct DelimSpan<Span> { open, close, entire });
 
 #[derive(Clone)]
-pub struct Group<TokenStream, Span> {
+pub(crate) struct Group<TokenStream, Span> {
     pub delimiter: Delimiter,
     pub stream: Option<TokenStream>,
     pub span: DelimSpan<Span>,
@@ -456,7 +456,7 @@ pub struct Group<TokenStream, Span> {
 compound_traits!(struct Group<TokenStream, Span> { delimiter, stream, span });
 
 #[derive(Clone)]
-pub struct Punct<Span> {
+pub(crate) struct Punct<Span> {
     pub ch: u8,
     pub joint: bool,
     pub span: Span,
@@ -465,7 +465,7 @@ pub struct Punct<Span> {
 compound_traits!(struct Punct<Span> { ch, joint, span });
 
 #[derive(Clone)]
-pub enum TokenTree<TokenStream, Span, Ident, Literal> {
+pub(crate) enum TokenTree<TokenStream, Span, Ident, Literal> {
     Group(Group<TokenStream, Span>),
     Punct(Punct<Span>),
     Ident(Ident),
@@ -484,7 +484,7 @@ compound_traits!(
 /// Globals provided alongside the initial inputs for a macro expansion.
 /// Provides values such as spans which are used frequently to avoid RPC.
 #[derive(Clone)]
-pub struct ExpnGlobals<Span> {
+pub(crate) struct ExpnGlobals<Span> {
     pub def_site: Span,
     pub call_site: Span,
     pub mixed_site: Span,

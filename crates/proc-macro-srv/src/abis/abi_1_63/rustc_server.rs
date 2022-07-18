@@ -8,10 +8,7 @@
 //!
 //! FIXME: No span and source file information is implemented yet
 
-use super::proc_macro::{
-    bridge::{self, server},
-    MultiSpan,
-};
+use super::proc_macro::bridge::{self, server};
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -27,16 +24,16 @@ type Literal = tt::Literal;
 type Span = tt::TokenId;
 
 #[derive(Debug, Default, Clone)]
-pub struct TokenStream {
+pub(crate) struct TokenStream {
     pub token_trees: Vec<TokenTree>,
 }
 
 impl TokenStream {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         TokenStream::default()
     }
 
-    pub fn with_subtree(subtree: tt::Subtree) -> Self {
+    pub(crate) fn with_subtree(subtree: tt::Subtree) -> Self {
         if subtree.delimiter.is_some() {
             TokenStream { token_trees: vec![TokenTree::Subtree(subtree)] }
         } else {
@@ -44,11 +41,11 @@ impl TokenStream {
         }
     }
 
-    pub fn into_subtree(self) -> tt::Subtree {
+    pub(crate) fn into_subtree(self) -> tt::Subtree {
         tt::Subtree { delimiter: None, token_trees: self.token_trees }
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.token_trees.is_empty()
     }
 }
@@ -101,7 +98,7 @@ impl Extend<TokenStream> for TokenStream {
 }
 
 #[derive(Clone)]
-pub struct SourceFile {
+pub(crate) struct SourceFile {
     // FIXME stub
 }
 
@@ -111,7 +108,7 @@ type LineColumn = super::proc_macro::LineColumn;
 /// A structure representing a diagnostic message and associated children
 /// messages.
 #[derive(Clone, Debug)]
-pub struct Diagnostic {
+pub(crate) struct Diagnostic {
     level: Level,
     message: String,
     spans: Vec<Span>,
@@ -120,7 +117,7 @@ pub struct Diagnostic {
 
 impl Diagnostic {
     /// Creates a new diagnostic with the given `level` and `message`.
-    pub fn new<T: Into<String>>(level: Level, message: T) -> Diagnostic {
+    pub(crate) fn new<T: Into<String>>(level: Level, message: T) -> Diagnostic {
         Diagnostic { level, message: message.into(), spans: vec![], children: vec![] }
     }
 }
@@ -128,7 +125,7 @@ impl Diagnostic {
 // Rustc Server Ident has to be `Copyable`
 // We use a stub here for bypassing
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
-pub struct IdentId(u32);
+pub(crate) struct IdentId(u32);
 
 #[derive(Clone, Hash, Eq, PartialEq)]
 struct IdentData(tt::Ident);
@@ -161,7 +158,7 @@ impl IdentInterner {
     }
 }
 
-pub struct TokenStreamBuilder {
+pub(crate) struct TokenStreamBuilder {
     acc: TokenStream,
 }
 
@@ -263,15 +260,15 @@ impl TokenStreamBuilder {
     }
 }
 
-pub struct FreeFunctions;
+pub(crate) struct FreeFunctions;
 
 #[derive(Clone)]
-pub struct TokenStreamIter {
+pub(crate) struct TokenStreamIter {
     trees: IntoIter<TokenTree>,
 }
 
 #[derive(Default)]
-pub struct Rustc {
+pub(crate) struct Rustc {
     ident_interner: IdentInterner,
     // FIXME: store span information here.
 }
@@ -859,5 +856,15 @@ mod tests {
                 id: tt::TokenId::unspecified(),
             }))
         );
+    }
+}
+
+impl server::Server for Rustc {
+    fn globals(&mut self) -> bridge::ExpnGlobals<Self::Span> {
+        bridge::ExpnGlobals {
+            def_site: tt::TokenId::unspecified(),
+            call_site: tt::TokenId::unspecified(),
+            mixed_site: tt::TokenId::unspecified(),
+        }
     }
 }

@@ -34,7 +34,7 @@ pub mod bridge;
 
 mod diagnostic;
 
-pub use diagnostic::{Diagnostic, Level, MultiSpan};
+pub(crate) use diagnostic::{Diagnostic, Level, MultiSpan};
 
 use std::cmp::Ordering;
 use std::ops::RangeBounds;
@@ -55,7 +55,7 @@ use std::{error, fmt, iter};
 /// non-panicking way to detect whether the infrastructure required to use the
 /// API of proc_macro is presently available. Returns true if invoked from
 /// inside of a procedural macro, false if invoked from any other binary.
-pub fn is_available() -> bool {
+pub(crate) fn is_available() -> bool {
     bridge::client::is_available()
 }
 
@@ -67,7 +67,7 @@ pub fn is_available() -> bool {
 /// This is both the input and output of `#[proc_macro]`, `#[proc_macro_attribute]`
 /// and `#[proc_macro_derive]` definitions.
 #[derive(Clone)]
-pub struct TokenStream(Option<bridge::client::TokenStream>);
+pub(crate) struct TokenStream(Option<bridge::client::TokenStream>);
 
 // impl !Send for TokenStream {}
 // impl !Sync for TokenStream {}
@@ -75,7 +75,7 @@ pub struct TokenStream(Option<bridge::client::TokenStream>);
 /// Error returned from `TokenStream::from_str`.
 #[non_exhaustive]
 #[derive(Debug)]
-pub struct LexError;
+pub(crate) struct LexError;
 
 impl fmt::Display for LexError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -91,7 +91,7 @@ impl error::Error for LexError {}
 /// Error returned from `TokenStream::expand_expr`.
 #[non_exhaustive]
 #[derive(Debug)]
-pub struct ExpandError;
+pub(crate) struct ExpandError;
 
 impl fmt::Display for ExpandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -106,12 +106,12 @@ impl error::Error for ExpandError {}
 
 impl TokenStream {
     /// Returns an empty `TokenStream` containing no token trees.
-    pub fn new() -> TokenStream {
+    pub(crate) fn new() -> TokenStream {
         TokenStream(None)
     }
 
     /// Checks if this `TokenStream` is empty.
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.0.as_ref().map(|h| h.is_empty()).unwrap_or(true)
     }
 
@@ -125,7 +125,7 @@ impl TokenStream {
     /// report an error, failing compilation, and/or return an `Err(..)`. The
     /// specific behavior for any error condition, and what conditions are
     /// considered errors, is unspecified and may change in the future.
-    pub fn expand_expr(&self) -> Result<TokenStream, ExpandError> {
+    pub(crate) fn expand_expr(&self) -> Result<TokenStream, ExpandError> {
         let stream = self.0.as_ref().ok_or(ExpandError)?;
         match bridge::client::TokenStream::expand_expr(stream) {
             Ok(stream) => Ok(TokenStream(Some(stream))),
@@ -180,7 +180,7 @@ impl Default for TokenStream {
     }
 }
 
-pub use quote::{quote, quote_span};
+pub(crate) use quote::{quote, quote_span};
 
 fn tree_to_bridge_tree(
     tree: TokenTree,
@@ -328,7 +328,7 @@ pub mod token_stream {
     /// The iteration is "shallow", e.g., the iterator doesn't recurse into delimited groups,
     /// and returns whole groups as token trees.
     #[derive(Clone)]
-    pub struct IntoIter(
+    pub(crate) struct IntoIter(
         std::vec::IntoIter<
             bridge::TokenTree<
                 bridge::client::TokenStream,
@@ -378,7 +378,7 @@ mod quote;
 
 /// A region of source code, along with macro expansion information.
 #[derive(Copy, Clone)]
-pub struct Span(bridge::client::Span);
+pub(crate) struct Span(bridge::client::Span);
 
 // impl !Send for Span {}
 // impl !Sync for Span {}
@@ -387,7 +387,7 @@ macro_rules! diagnostic_method {
     ($name:ident, $level:expr) => {
         /// Creates a new `Diagnostic` with the given `message` at the span
         /// `self`.
-        pub fn $name<T: Into<String>>(self, message: T) -> Diagnostic {
+        pub(crate) fn $name<T: Into<String>>(self, message: T) -> Diagnostic {
             Diagnostic::spanned(self, $level, message)
         }
     };
@@ -395,7 +395,7 @@ macro_rules! diagnostic_method {
 
 impl Span {
     /// A span that resolves at the macro definition site.
-    pub fn def_site() -> Span {
+    pub(crate) fn def_site() -> Span {
         Span(bridge::client::Span::def_site())
     }
 
@@ -403,7 +403,7 @@ impl Span {
     /// Identifiers created with this span will be resolved as if they were written
     /// directly at the macro call location (call-site hygiene) and other code
     /// at the macro call site will be able to refer to them as well.
-    pub fn call_site() -> Span {
+    pub(crate) fn call_site() -> Span {
         Span(bridge::client::Span::call_site())
     }
 
@@ -411,69 +411,69 @@ impl Span {
     /// definition site (local variables, labels, `$crate`) and sometimes at the macro
     /// call site (everything else).
     /// The span location is taken from the call-site.
-    pub fn mixed_site() -> Span {
+    pub(crate) fn mixed_site() -> Span {
         Span(bridge::client::Span::mixed_site())
     }
 
     /// The original source file into which this span points.
-    pub fn source_file(&self) -> SourceFile {
+    pub(crate) fn source_file(&self) -> SourceFile {
         SourceFile(self.0.source_file())
     }
 
     /// The `Span` for the tokens in the previous macro expansion from which
     /// `self` was generated from, if any.
-    pub fn parent(&self) -> Option<Span> {
+    pub(crate) fn parent(&self) -> Option<Span> {
         self.0.parent().map(Span)
     }
 
     /// The span for the origin source code that `self` was generated from. If
     /// this `Span` wasn't generated from other macro expansions then the return
     /// value is the same as `*self`.
-    pub fn source(&self) -> Span {
+    pub(crate) fn source(&self) -> Span {
         Span(self.0.source())
     }
 
     /// Gets the starting line/column in the source file for this span.
-    pub fn start(&self) -> LineColumn {
+    pub(crate) fn start(&self) -> LineColumn {
         self.0.start().add_1_to_column()
     }
 
     /// Gets the ending line/column in the source file for this span.
-    pub fn end(&self) -> LineColumn {
+    pub(crate) fn end(&self) -> LineColumn {
         self.0.end().add_1_to_column()
     }
 
     /// Creates an empty span pointing to directly before this span.
-    pub fn before(&self) -> Span {
+    pub(crate) fn before(&self) -> Span {
         Span(self.0.before())
     }
 
     /// Creates an empty span pointing to directly after this span.
-    pub fn after(&self) -> Span {
+    pub(crate) fn after(&self) -> Span {
         Span(self.0.after())
     }
 
     /// Creates a new span encompassing `self` and `other`.
     ///
     /// Returns `None` if `self` and `other` are from different files.
-    pub fn join(&self, other: Span) -> Option<Span> {
+    pub(crate) fn join(&self, other: Span) -> Option<Span> {
         self.0.join(other.0).map(Span)
     }
 
     /// Creates a new span with the same line/column information as `self` but
     /// that resolves symbols as though it were at `other`.
-    pub fn resolved_at(&self, other: Span) -> Span {
+    pub(crate) fn resolved_at(&self, other: Span) -> Span {
         Span(self.0.resolved_at(other.0))
     }
 
     /// Creates a new span with the same name resolution behavior as `self` but
     /// with the line/column information of `other`.
-    pub fn located_at(&self, other: Span) -> Span {
+    pub(crate) fn located_at(&self, other: Span) -> Span {
         other.resolved_at(*self)
     }
 
     /// Compares to spans to see if they're equal.
-    pub fn eq(&self, other: &Span) -> bool {
+    pub(crate) fn eq(&self, other: &Span) -> bool {
         self.0 == other.0
     }
 
@@ -484,19 +484,19 @@ impl Span {
     /// Note: The observable result of a macro should only rely on the tokens and
     /// not on this source text. The result of this function is a best effort to
     /// be used for diagnostics only.
-    pub fn source_text(&self) -> Option<String> {
+    pub(crate) fn source_text(&self) -> Option<String> {
         self.0.source_text()
     }
 
     // Used by the implementation of `Span::quote`
     #[doc(hidden)]
-    pub fn save_span(&self) -> usize {
+    pub(crate) fn save_span(&self) -> usize {
         self.0.save_span()
     }
 
     // Used by the implementation of `Span::quote`
     #[doc(hidden)]
-    pub fn recover_proc_macro_span(id: usize) -> Span {
+    pub(crate) fn recover_proc_macro_span(id: usize) -> Span {
         Span(bridge::client::Span::recover_proc_macro_span(id))
     }
 
@@ -515,7 +515,7 @@ impl fmt::Debug for Span {
 
 /// A line-column pair representing the start or end of a `Span`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct LineColumn {
+pub(crate) struct LineColumn {
     /// The 1-indexed line in the source file on which the span starts or ends (inclusive).
     pub line: usize,
     /// The 1-indexed column (number of bytes in UTF-8 encoding) in the source
@@ -546,7 +546,7 @@ impl PartialOrd for LineColumn {
 
 /// The source file of a given `Span`.
 #[derive(Clone)]
-pub struct SourceFile(bridge::client::SourceFile);
+pub(crate) struct SourceFile(bridge::client::SourceFile);
 
 impl SourceFile {
     /// Gets the path to this source file.
@@ -559,13 +559,13 @@ impl SourceFile {
     /// the command line, the path as given might not actually be valid.
     ///
     /// [`is_real`]: Self::is_real
-    pub fn path(&self) -> PathBuf {
+    pub(crate) fn path(&self) -> PathBuf {
         PathBuf::from(self.0.path())
     }
 
     /// Returns `true` if this source file is a real source file, and not generated by an external
     /// macro's expansion.
-    pub fn is_real(&self) -> bool {
+    pub(crate) fn is_real(&self) -> bool {
         // This is a hack until intercrate spans are implemented and we can have real source files
         // for spans generated in external macros.
         // https://github.com/rust-lang/rust/pull/43604#issuecomment-333334368
@@ -592,7 +592,7 @@ impl Eq for SourceFile {}
 
 /// A single token or a delimited sequence of token trees (e.g., `[1, (), ..]`).
 #[derive(Clone)]
-pub enum TokenTree {
+pub(crate) enum TokenTree {
     /// A token stream surrounded by bracket delimiters.
     Group(Group),
     /// An identifier.
@@ -609,7 +609,7 @@ pub enum TokenTree {
 impl TokenTree {
     /// Returns the span of this tree, delegating to the `span` method of
     /// the contained token or a delimited stream.
-    pub fn span(&self) -> Span {
+    pub(crate) fn span(&self) -> Span {
         match *self {
             TokenTree::Group(ref t) => t.span(),
             TokenTree::Ident(ref t) => t.span(),
@@ -623,7 +623,7 @@ impl TokenTree {
     /// Note that if this token is a `Group` then this method will not configure
     /// the span of each of the internal tokens, this will simply delegate to
     /// the `set_span` method of each variant.
-    pub fn set_span(&mut self, span: Span) {
+    pub(crate) fn set_span(&mut self, span: Span) {
         match *self {
             TokenTree::Group(ref mut t) => t.set_span(span),
             TokenTree::Ident(ref mut t) => t.set_span(span),
@@ -697,14 +697,14 @@ impl fmt::Display for TokenTree {
 ///
 /// A `Group` internally contains a `TokenStream` which is surrounded by `Delimiter`s.
 #[derive(Clone)]
-pub struct Group(bridge::Group<bridge::client::TokenStream, bridge::client::Span>);
+pub(crate) struct Group(bridge::Group<bridge::client::TokenStream, bridge::client::Span>);
 
 // impl !Send for Group {}
 // impl !Sync for Group {}
 
 /// Describes how a sequence of token trees is delimited.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Delimiter {
+pub(crate) enum Delimiter {
     /// `( ... )`
     Parenthesis,
     /// `{ ... }`
@@ -725,7 +725,7 @@ impl Group {
     /// This constructor will set the span for this group to
     /// `Span::call_site()`. To change the span you can use the `set_span`
     /// method below.
-    pub fn new(delimiter: Delimiter, stream: TokenStream) -> Group {
+    pub(crate) fn new(delimiter: Delimiter, stream: TokenStream) -> Group {
         Group(bridge::Group {
             delimiter,
             stream: stream.0,
@@ -734,7 +734,7 @@ impl Group {
     }
 
     /// Returns the delimiter of this `Group`
-    pub fn delimiter(&self) -> Delimiter {
+    pub(crate) fn delimiter(&self) -> Delimiter {
         self.0.delimiter
     }
 
@@ -742,7 +742,7 @@ impl Group {
     ///
     /// Note that the returned token stream does not include the delimiter
     /// returned above.
-    pub fn stream(&self) -> TokenStream {
+    pub(crate) fn stream(&self) -> TokenStream {
         TokenStream(self.0.stream.clone())
     }
 
@@ -750,30 +750,30 @@ impl Group {
     /// entire `Group`.
     ///
     /// ```text
-    /// pub fn span(&self) -> Span {
+    /// pub(crate) fn span(&self) -> Span {
     ///            ^^^^^^^
     /// ```
-    pub fn span(&self) -> Span {
+    pub(crate) fn span(&self) -> Span {
         Span(self.0.span.entire)
     }
 
     /// Returns the span pointing to the opening delimiter of this group.
     ///
     /// ```text
-    /// pub fn span_open(&self) -> Span {
+    /// pub(crate) fn span_open(&self) -> Span {
     ///                 ^
     /// ```
-    pub fn span_open(&self) -> Span {
+    pub(crate) fn span_open(&self) -> Span {
         Span(self.0.span.open)
     }
 
     /// Returns the span pointing to the closing delimiter of this group.
     ///
     /// ```text
-    /// pub fn span_close(&self) -> Span {
+    /// pub(crate) fn span_close(&self) -> Span {
     ///                        ^
     /// ```
-    pub fn span_close(&self) -> Span {
+    pub(crate) fn span_close(&self) -> Span {
         Span(self.0.span.close)
     }
 
@@ -783,7 +783,7 @@ impl Group {
     /// This method will **not** set the span of all the internal tokens spanned
     /// by this group, but rather it will only set the span of the delimiter
     /// tokens at the level of the `Group`.
-    pub fn set_span(&mut self, span: Span) {
+    pub(crate) fn set_span(&mut self, span: Span) {
         self.0.span = bridge::DelimSpan::from_single(span.0);
     }
 }
@@ -820,7 +820,7 @@ impl fmt::Debug for Group {
 /// Multi-character operators like `+=` are represented as two instances of `Punct` with different
 /// forms of `Spacing` returned.
 #[derive(Clone)]
-pub struct Punct(bridge::Punct<bridge::client::Span>);
+pub(crate) struct Punct(bridge::Punct<bridge::client::Span>);
 
 // impl !Send for Punct {}
 // impl !Sync for Punct {}
@@ -828,7 +828,7 @@ pub struct Punct(bridge::Punct<bridge::client::Span>);
 /// Describes whether a `Punct` is followed immediately by another `Punct` ([`Spacing::Joint`]) or
 /// by a different token or whitespace ([`Spacing::Alone`]).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Spacing {
+pub(crate) enum Spacing {
     /// A `Punct` is not immediately followed by another `Punct`.
     /// E.g. `+` is `Alone` in `+ =`, `+ident` and `+()`.
     Alone,
@@ -846,7 +846,7 @@ impl Punct {
     ///
     /// The returned `Punct` will have the default span of `Span::call_site()`
     /// which can be further configured with the `set_span` method below.
-    pub fn new(ch: char, spacing: Spacing) -> Punct {
+    pub(crate) fn new(ch: char, spacing: Spacing) -> Punct {
         const LEGAL_CHARS: &[char] = &[
             '=', '<', '>', '!', '~', '+', '-', '*', '/', '%', '^', '&', '|', '@', '.', ',', ';',
             ':', '#', '$', '?', '\'',
@@ -862,7 +862,7 @@ impl Punct {
     }
 
     /// Returns the value of this punctuation character as `char`.
-    pub fn as_char(&self) -> char {
+    pub(crate) fn as_char(&self) -> char {
         self.0.ch as char
     }
 
@@ -870,7 +870,7 @@ impl Punct {
     /// followed by another `Punct` in the token stream, so they can potentially be combined into
     /// a multi-character operator (`Joint`), or it's followed by some other token or whitespace
     /// (`Alone`) so the operator has certainly ended.
-    pub fn spacing(&self) -> Spacing {
+    pub(crate) fn spacing(&self) -> Spacing {
         if self.0.joint {
             Spacing::Joint
         } else {
@@ -879,12 +879,12 @@ impl Punct {
     }
 
     /// Returns the span for this punctuation character.
-    pub fn span(&self) -> Span {
+    pub(crate) fn span(&self) -> Span {
         Span(self.0.span)
     }
 
     /// Configure the span for this punctuation character.
-    pub fn set_span(&mut self, span: Span) {
+    pub(crate) fn set_span(&mut self, span: Span) {
         self.0.span = span.0;
     }
 }
@@ -921,7 +921,7 @@ impl PartialEq<Punct> for char {
 
 /// An identifier (`ident`).
 #[derive(Clone)]
-pub struct Ident(bridge::client::Ident);
+pub(crate) struct Ident(bridge::client::Ident);
 
 impl Ident {
     /// Creates a new `Ident` with the given `string` as well as the specified
@@ -943,7 +943,7 @@ impl Ident {
     ///
     /// Due to the current importance of hygiene this constructor, unlike other
     /// tokens, requires a `Span` to be specified at construction.
-    pub fn new(string: &str, span: Span) -> Ident {
+    pub(crate) fn new(string: &str, span: Span) -> Ident {
         Ident(bridge::client::Ident::new(string, span.0, false))
     }
 
@@ -951,18 +951,18 @@ impl Ident {
     /// The `string` argument be a valid identifier permitted by the language
     /// (including keywords, e.g. `fn`). Keywords which are usable in path segments
     /// (e.g. `self`, `super`) are not supported, and will cause a panic.
-    pub fn new_raw(string: &str, span: Span) -> Ident {
+    pub(crate) fn new_raw(string: &str, span: Span) -> Ident {
         Ident(bridge::client::Ident::new(string, span.0, true))
     }
 
     /// Returns the span of this `Ident`, encompassing the entire string returned
     /// by [`to_string`](Self::to_string).
-    pub fn span(&self) -> Span {
+    pub(crate) fn span(&self) -> Span {
         Span(self.0.span())
     }
 
     /// Configures the span of this `Ident`, possibly changing its hygiene context.
-    pub fn set_span(&mut self, span: Span) {
+    pub(crate) fn set_span(&mut self, span: Span) {
         self.0 = self.0.with_span(span.0);
     }
 }
@@ -997,7 +997,7 @@ impl fmt::Debug for Ident {
 /// with or without a suffix (`1`, `1u8`, `2.3`, `2.3f32`).
 /// Boolean literals like `true` and `false` do not belong here, they are `Ident`s.
 #[derive(Clone)]
-pub struct Literal(bridge::client::Literal);
+pub(crate) struct Literal(bridge::client::Literal);
 
 macro_rules! suffixed_int_literals {
     ($($name:ident => $kind:ident,)*) => ($(
@@ -1012,7 +1012,7 @@ macro_rules! suffixed_int_literals {
         /// Literals created through this method have the `Span::call_site()`
         /// span by default, which can be configured with the `set_span` method
         /// below.
-        pub fn $name(n: $kind) -> Literal {
+        pub(crate) fn $name(n: $kind) -> Literal {
             Literal(bridge::client::Literal::typed_integer(&n.to_string(), stringify!($kind)))
         }
     )*)
@@ -1033,7 +1033,7 @@ macro_rules! unsuffixed_int_literals {
         /// Literals created through this method have the `Span::call_site()`
         /// span by default, which can be configured with the `set_span` method
         /// below.
-        pub fn $name(n: $kind) -> Literal {
+        pub(crate) fn $name(n: $kind) -> Literal {
             Literal(bridge::client::Literal::integer(&n.to_string()))
         }
     )*)
@@ -1082,7 +1082,7 @@ impl Literal {
     ///
     /// This function requires that the specified float is finite, for
     /// example if it is infinity or NaN this function will panic.
-    pub fn f32_unsuffixed(n: f32) -> Literal {
+    pub(crate) fn f32_unsuffixed(n: f32) -> Literal {
         if !n.is_finite() {
             panic!("Invalid float literal {n}");
         }
@@ -1106,7 +1106,7 @@ impl Literal {
     ///
     /// This function requires that the specified float is finite, for
     /// example if it is infinity or NaN this function will panic.
-    pub fn f32_suffixed(n: f32) -> Literal {
+    pub(crate) fn f32_suffixed(n: f32) -> Literal {
         if !n.is_finite() {
             panic!("Invalid float literal {n}");
         }
@@ -1125,7 +1125,7 @@ impl Literal {
     ///
     /// This function requires that the specified float is finite, for
     /// example if it is infinity or NaN this function will panic.
-    pub fn f64_unsuffixed(n: f64) -> Literal {
+    pub(crate) fn f64_unsuffixed(n: f64) -> Literal {
         if !n.is_finite() {
             panic!("Invalid float literal {n}");
         }
@@ -1149,7 +1149,7 @@ impl Literal {
     ///
     /// This function requires that the specified float is finite, for
     /// example if it is infinity or NaN this function will panic.
-    pub fn f64_suffixed(n: f64) -> Literal {
+    pub(crate) fn f64_suffixed(n: f64) -> Literal {
         if !n.is_finite() {
             panic!("Invalid float literal {n}");
         }
@@ -1157,27 +1157,27 @@ impl Literal {
     }
 
     /// String literal.
-    pub fn string(string: &str) -> Literal {
+    pub(crate) fn string(string: &str) -> Literal {
         Literal(bridge::client::Literal::string(string))
     }
 
     /// Character literal.
-    pub fn character(ch: char) -> Literal {
+    pub(crate) fn character(ch: char) -> Literal {
         Literal(bridge::client::Literal::character(ch))
     }
 
     /// Byte string literal.
-    pub fn byte_string(bytes: &[u8]) -> Literal {
+    pub(crate) fn byte_string(bytes: &[u8]) -> Literal {
         Literal(bridge::client::Literal::byte_string(bytes))
     }
 
     /// Returns the span encompassing this literal.
-    pub fn span(&self) -> Span {
+    pub(crate) fn span(&self) -> Span {
         Span(self.0.span())
     }
 
     /// Configures the span associated for this literal.
-    pub fn set_span(&mut self, span: Span) {
+    pub(crate) fn set_span(&mut self, span: Span) {
         self.0.set_span(span.0);
     }
 
@@ -1192,7 +1192,7 @@ impl Literal {
     // called blindly. For example, `to_string()` for the character 'c' returns
     // "'\u{63}'"; there is no way for the user to know whether the source text
     // was 'c' or whether it was '\u{63}'.
-    pub fn subspan<R: RangeBounds<usize>>(&self, range: R) -> Option<Span> {
+    pub(crate) fn subspan<R: RangeBounds<usize>>(&self, range: R) -> Option<Span> {
         self.0.subspan(range.start_bound().cloned(), range.end_bound().cloned()).map(Span)
     }
 }
@@ -1250,7 +1250,7 @@ impl fmt::Debug for Literal {
 //     /// compilation, and will be able to rerun the build when the value of that variable changes.
 //     /// Besides the dependency tracking this function should be equivalent to `env::var` from the
 //     /// standard library, except that the argument must be UTF-8.
-//     pub fn var<K: AsRef<OsStr> + AsRef<str>>(key: K) -> Result<String, VarError> {
+//     pub(crate) fn var<K: AsRef<OsStr> + AsRef<str>>(key: K) -> Result<String, VarError> {
 //         let key: &str = key.as_ref();
 //         let value = env::var(key);
 //         bridge::client::FreeFunctions::track_env_var(key, value.as_deref().ok());
@@ -1264,7 +1264,7 @@ impl fmt::Debug for Literal {
 //     /// Track a file explicitly.
 //     ///
 //     /// Commonly used for tracking asset preprocessing.
-//     pub fn path<P: AsRef<str>>(path: P) {
+//     pub(crate) fn path<P: AsRef<str>>(path: P) {
 //         let path: &str = path.as_ref();
 //         bridge::client::FreeFunctions::track_path(path);
 //     }
