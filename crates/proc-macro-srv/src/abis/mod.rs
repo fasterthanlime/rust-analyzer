@@ -30,6 +30,7 @@ mod abi_1_56;
 mod abi_1_57;
 mod abi_1_58;
 mod abi_1_63;
+mod abi_internal;
 
 use super::dylib::LoadProcMacroDylibError;
 pub(crate) use abi_1_48::Abi as Abi_1_48;
@@ -38,6 +39,7 @@ pub(crate) use abi_1_56::Abi as Abi_1_56;
 pub(crate) use abi_1_57::Abi as Abi_1_57;
 pub(crate) use abi_1_58::Abi as Abi_1_58;
 pub(crate) use abi_1_63::Abi as Abi_1_63;
+pub(crate) use abi_internal::Abi as Abi_Internal;
 use libloading::Library;
 use proc_macro_api::{ProcMacroKind, RustCInfo};
 
@@ -58,6 +60,7 @@ pub(crate) enum Abi {
     Abi1_57(Abi_1_57),
     Abi1_58(Abi_1_58),
     Abi1_63(Abi_1_63),
+    AbiInternal(Abi_Internal),
 }
 
 impl Abi {
@@ -73,37 +76,42 @@ impl Abi {
     pub fn from_lib(
         lib: &Library,
         symbol_name: String,
-        info: RustCInfo,
+        _info: RustCInfo,
     ) -> Result<Abi, LoadProcMacroDylibError> {
+        {
+            let inner = unsafe { Abi_Internal::from_lib(lib, symbol_name) }?;
+            Ok(Abi::AbiInternal(inner))
+        }
+
         // FIXME: this should use exclusive ranges when they're stable
         // https://github.com/rust-lang/rust/issues/37854
-        match (info.version.0, info.version.1) {
-            (1, 48..=53) => {
-                let inner = unsafe { Abi_1_48::from_lib(lib, symbol_name) }?;
-                Ok(Abi::Abi1_48(inner))
-            }
-            (1, 54..=55) => {
-                let inner = unsafe { Abi_1_54::from_lib(lib, symbol_name) }?;
-                Ok(Abi::Abi1_54(inner))
-            }
-            (1, 56) => {
-                let inner = unsafe { Abi_1_56::from_lib(lib, symbol_name) }?;
-                Ok(Abi::Abi1_56(inner))
-            }
-            (1, 57) => {
-                let inner = unsafe { Abi_1_57::from_lib(lib, symbol_name) }?;
-                Ok(Abi::Abi1_57(inner))
-            }
-            (1, 58..=62) => {
-                let inner = unsafe { Abi_1_58::from_lib(lib, symbol_name) }?;
-                Ok(Abi::Abi1_58(inner))
-            }
-            (1, 63..) => {
-                let inner = unsafe { Abi_1_63::from_lib(lib, symbol_name) }?;
-                Ok(Abi::Abi1_63(inner))
-            }
-            _ => Err(LoadProcMacroDylibError::UnsupportedABI),
-        }
+        // match (info.version.0, info.version.1) {
+        //     (1, 48..=53) => {
+        //         let inner = unsafe { Abi_1_48::from_lib(lib, symbol_name) }?;
+        //         Ok(Abi::Abi1_48(inner))
+        //     }
+        //     (1, 54..=55) => {
+        //         let inner = unsafe { Abi_1_54::from_lib(lib, symbol_name) }?;
+        //         Ok(Abi::Abi1_54(inner))
+        //     }
+        //     (1, 56) => {
+        //         let inner = unsafe { Abi_1_56::from_lib(lib, symbol_name) }?;
+        //         Ok(Abi::Abi1_56(inner))
+        //     }
+        //     (1, 57) => {
+        //         let inner = unsafe { Abi_1_57::from_lib(lib, symbol_name) }?;
+        //         Ok(Abi::Abi1_57(inner))
+        //     }
+        //     (1, 58..=62) => {
+        //         let inner = unsafe { Abi_1_58::from_lib(lib, symbol_name) }?;
+        //         Ok(Abi::Abi1_58(inner))
+        //     }
+        //     (1, 63..) => {
+        //         let inner = unsafe { Abi_1_63::from_lib(lib, symbol_name) }?;
+        //         Ok(Abi::Abi1_63(inner))
+        //     }
+        //     _ => Err(LoadProcMacroDylibError::UnsupportedABI),
+        // }
     }
 
     pub fn expand(
@@ -119,6 +127,7 @@ impl Abi {
             Self::Abi1_57(abi) => abi.expand(macro_name, macro_body, attributes),
             Self::Abi1_58(abi) => abi.expand(macro_name, macro_body, attributes),
             Self::Abi1_63(abi) => abi.expand(macro_name, macro_body, attributes),
+            Self::AbiInternal(abi) => abi.expand(macro_name, macro_body, attributes),
         }
     }
 
@@ -130,6 +139,7 @@ impl Abi {
             Self::Abi1_57(abi) => abi.list_macros(),
             Self::Abi1_58(abi) => abi.list_macros(),
             Self::Abi1_63(abi) => abi.list_macros(),
+            Self::AbiInternal(abi) => abi.list_macros(),
         }
     }
 }

@@ -10,6 +10,9 @@
 //! * By **copying** the whole rustc `lib_proc_macro` code, we are able to build this with `stable`
 //!   rustc rather than `unstable`. (Although in general ABI compatibility is still an issue)…
 #![allow(unreachable_pub)]
+#![feature(proc_macro_internals)]
+#![feature(proc_macro_diagnostic)]
+#![feature(proc_macro_span)]
 
 mod dylib;
 mod abis;
