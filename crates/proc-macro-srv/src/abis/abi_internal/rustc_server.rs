@@ -26,7 +26,7 @@ type Spacing = tt::Spacing;
 type Literal = tt::Literal;
 type Span = tt::TokenId;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct TokenStream {
     pub token_trees: Vec<TokenTree>,
 }
