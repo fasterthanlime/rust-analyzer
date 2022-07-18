@@ -8,7 +8,10 @@
 //!
 //! FIXME: No span and source file information is implemented yet
 
-use super::proc_macro::bridge::{self, server};
+use super::proc_macro::{
+    self,
+    bridge::{self, server},
+};
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -276,10 +279,6 @@ pub struct Rustc {
 impl server::Types for Rustc {
     type FreeFunctions = FreeFunctions;
     type TokenStream = TokenStream;
-    type TokenStreamBuilder = TokenStreamBuilder;
-    type TokenStreamIter = TokenStreamIter;
-    type Group = Group;
-    type Punct = Punct;
     type Ident = IdentId;
     type Literal = Literal;
     type SourceFile = SourceFile;
@@ -297,10 +296,6 @@ impl server::FreeFunctions for Rustc {
 }
 
 impl server::TokenStream for Rustc {
-    fn new(&mut self) -> Self::TokenStream {
-        Self::TokenStream::new()
-    }
-
     fn is_empty(&mut self, stream: &Self::TokenStream) -> bool {
         stream.is_empty()
     }
@@ -344,130 +339,41 @@ impl server::TokenStream for Rustc {
         }
     }
 
-    fn into_iter(&mut self, stream: Self::TokenStream) -> Self::TokenStreamIter {
-        let trees: Vec<TokenTree> = stream.into_iter().collect();
-        TokenStreamIter { trees: trees.into_iter() }
-    }
-
     fn expand_expr(&mut self, self_: &Self::TokenStream) -> Result<Self::TokenStream, ()> {
         Ok(self_.clone())
     }
 }
 
-impl server::TokenStreamBuilder for Rustc {
-    fn new(&mut self) -> Self::TokenStreamBuilder {
-        Self::TokenStreamBuilder::new()
-    }
-    fn push(&mut self, builder: &mut Self::TokenStreamBuilder, stream: Self::TokenStream) {
-        builder.push(stream)
-    }
-    fn build(&mut self, builder: Self::TokenStreamBuilder) -> Self::TokenStream {
-        builder.build()
-    }
-}
-
-impl server::TokenStreamIter for Rustc {
-    fn next(
-        &mut self,
-        iter: &mut Self::TokenStreamIter,
-    ) -> Option<bridge::TokenTree<Self::Group, Self::Punct, Self::Ident, Self::Literal>> {
-        iter.trees.next().map(|tree| match tree {
-            TokenTree::Subtree(group) => bridge::TokenTree::Group(group),
-            TokenTree::Leaf(tt::Leaf::Ident(ident)) => {
-                bridge::TokenTree::Ident(IdentId(self.ident_interner.intern(&IdentData(ident))))
-            }
-            TokenTree::Leaf(tt::Leaf::Literal(literal)) => bridge::TokenTree::Literal(literal),
-            TokenTree::Leaf(tt::Leaf::Punct(punct)) => bridge::TokenTree::Punct(punct),
-        })
-    }
-}
-
-fn delim_to_internal(d: bridge::Delimiter) -> Option<tt::Delimiter> {
+fn delim_to_internal(d: proc_macro::Delimiter) -> Option<tt::Delimiter> {
     let kind = match d {
-        bridge::Delimiter::Parenthesis => tt::DelimiterKind::Parenthesis,
-        bridge::Delimiter::Brace => tt::DelimiterKind::Brace,
-        bridge::Delimiter::Bracket => tt::DelimiterKind::Bracket,
-        bridge::Delimiter::None => return None,
+        proc_macro::Delimiter::Parenthesis => tt::DelimiterKind::Parenthesis,
+        proc_macro::Delimiter::Brace => tt::DelimiterKind::Brace,
+        proc_macro::Delimiter::Bracket => tt::DelimiterKind::Bracket,
+        proc_macro::Delimiter::None => return None,
     };
     Some(tt::Delimiter { id: tt::TokenId::unspecified(), kind })
 }
 
-fn delim_to_external(d: Option<tt::Delimiter>) -> bridge::Delimiter {
+fn delim_to_external(d: Option<tt::Delimiter>) -> proc_macro::Delimiter {
     match d.map(|it| it.kind) {
-        Some(tt::DelimiterKind::Parenthesis) => bridge::Delimiter::Parenthesis,
-        Some(tt::DelimiterKind::Brace) => bridge::Delimiter::Brace,
-        Some(tt::DelimiterKind::Bracket) => bridge::Delimiter::Bracket,
-        None => bridge::Delimiter::None,
+        Some(tt::DelimiterKind::Parenthesis) => proc_macro::Delimiter::Parenthesis,
+        Some(tt::DelimiterKind::Brace) => proc_macro::Delimiter::Brace,
+        Some(tt::DelimiterKind::Bracket) => proc_macro::Delimiter::Bracket,
+        None => proc_macro::Delimiter::None,
     }
 }
 
-fn spacing_to_internal(spacing: bridge::Spacing) -> Spacing {
+fn spacing_to_internal(spacing: proc_macro::Spacing) -> Spacing {
     match spacing {
-        bridge::Spacing::Alone => Spacing::Alone,
-        bridge::Spacing::Joint => Spacing::Joint,
+        proc_macro::Spacing::Alone => Spacing::Alone,
+        proc_macro::Spacing::Joint => Spacing::Joint,
     }
 }
 
-fn spacing_to_external(spacing: Spacing) -> bridge::Spacing {
+fn spacing_to_external(spacing: Spacing) -> proc_macro::Spacing {
     match spacing {
-        Spacing::Alone => bridge::Spacing::Alone,
-        Spacing::Joint => bridge::Spacing::Joint,
-    }
-}
-
-impl server::Group for Rustc {
-    fn new(&mut self, delimiter: bridge::Delimiter, stream: Self::TokenStream) -> Self::Group {
-        Self::Group { delimiter: delim_to_internal(delimiter), token_trees: stream.token_trees }
-    }
-    fn delimiter(&mut self, group: &Self::Group) -> bridge::Delimiter {
-        delim_to_external(group.delimiter)
-    }
-
-    // NOTE: Return value of do not include delimiter
-    fn stream(&mut self, group: &Self::Group) -> Self::TokenStream {
-        TokenStream { token_trees: group.token_trees.clone() }
-    }
-
-    fn span(&mut self, group: &Self::Group) -> Self::Span {
-        group.delimiter.map(|it| it.id).unwrap_or_else(tt::TokenId::unspecified)
-    }
-
-    fn set_span(&mut self, group: &mut Self::Group, span: Self::Span) {
-        if let Some(delim) = &mut group.delimiter {
-            delim.id = span;
-        }
-    }
-
-    fn span_open(&mut self, group: &Self::Group) -> Self::Span {
-        // FIXME we only store one `TokenId` for the delimiters
-        group.delimiter.map(|it| it.id).unwrap_or_else(tt::TokenId::unspecified)
-    }
-
-    fn span_close(&mut self, group: &Self::Group) -> Self::Span {
-        // FIXME we only store one `TokenId` for the delimiters
-        group.delimiter.map(|it| it.id).unwrap_or_else(tt::TokenId::unspecified)
-    }
-}
-
-impl server::Punct for Rustc {
-    fn new(&mut self, ch: char, spacing: bridge::Spacing) -> Self::Punct {
-        tt::Punct {
-            char: ch,
-            spacing: spacing_to_internal(spacing),
-            id: tt::TokenId::unspecified(),
-        }
-    }
-    fn as_char(&mut self, punct: Self::Punct) -> char {
-        punct.char
-    }
-    fn spacing(&mut self, punct: Self::Punct) -> bridge::Spacing {
-        spacing_to_external(punct.spacing)
-    }
-    fn span(&mut self, punct: Self::Punct) -> Self::Span {
-        punct.id
-    }
-    fn with_span(&mut self, punct: Self::Punct, span: Self::Span) -> Self::Punct {
-        tt::Punct { id: span, ..punct }
+        Spacing::Alone => proc_macro::Spacing::Alone,
+        Spacing::Joint => proc_macro::Spacing::Joint,
     }
 }
 
