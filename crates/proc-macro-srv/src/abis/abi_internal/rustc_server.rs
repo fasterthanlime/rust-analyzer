@@ -313,7 +313,11 @@ impl server::TokenStream for Rustc {
     ) -> Self::TokenStream {
         match tree {
             bridge::TokenTree::Group(group) => {
-                let tree = TokenTree::from(group);
+                let subtree = tt::Subtree {
+                    delimiter: delim_to_internal(group.delimiter),
+                    token_trees: group.stream.unwrap_or_default().token_trees,
+                };
+                let tree = TokenTree::from(subtree);
                 Self::TokenStream::from_iter(vec![tree])
             }
 
@@ -332,6 +336,11 @@ impl server::TokenStream for Rustc {
             }
 
             bridge::TokenTree::Punct(p) => {
+                let p = tt::Punct {
+                    spacing: if p.joint { tt::Spacing::Joint } else { tt::Spacing::Alone },
+                    char: p.ch as _,
+                    id: p.span,
+                };
                 let leaf = tt::Leaf::from(p);
                 let tree = TokenTree::from(leaf);
                 Self::TokenStream::from_iter(vec![tree])
